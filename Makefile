@@ -3,12 +3,16 @@
 # Generated files from proto
 PROTO_FILES = proto/yakv.pb.go proto/yakv_grpc.pb.go
 
+# Source files
+CLIENT_SOURCES = $(wildcard client/*.go)
+SERVER_SOURCES = $(wildcard server/*.go)
+
 all: ./bin/client ./bin/server
 
-./bin/client: $(PROTO_FILES)
+./bin/client: $(PROTO_FILES) $(CLIENT_SOURCES)
 	go build -o ./bin/client ./client
 
-./bin/server: $(PROTO_FILES)
+./bin/server: $(PROTO_FILES) $(SERVER_SOURCES)
 	go build -o ./bin/server ./server
 
 $(PROTO_FILES): ./proto/yakv.proto
