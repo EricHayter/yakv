@@ -13,22 +13,30 @@ import (
 
 var (
 	port = flag.Int("port", 50051, "The server port")
+	database = make(map[string]string)
 )
 
 type server struct {
 	pb.UnimplementedYakvServerServer
 }
 
-func (s *server) HandleGetRequest(ctx context.Context, in *pb.GetResponse) (*pb.GetResponse, error) {
-        return &pb.GetResponse{Value: "Hi"}, nil
+func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, error) {
+	value, prs := database[in.GetKey()]
+	if prs {
+		return &pb.GetResponse{Value: value, Status: pb.Status_SUCCESS}, nil
+	} else {
+		return &pb.GetResponse{Value: value, Status: pb.Status_FAILURE}, nil
+	}
 }
 
-func (s *server) HandlePutRequest(ctx context.Context, in *pb.PutResponse) (*pb.PutResponse, error) {
-        return &pb.PutResponse{}, nil
+func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
+	database[in.GetKey()] = in.GetValue()
+	return &pb.PutResponse{Status: pb.Status_SUCCESS}, nil
 }
 
-func (s *server) HandleDeleteRequest(ctx context.Context, in *pb.DeleteResponse) (*pb.DeleteResponse, error) {
-        return &pb.DeleteResponse{}, nil
+func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteResponse, error) {
+	delete(database, in.GetKey())
+	return &pb.DeleteResponse{ Status: pb.Status_SUCCESS}, nil
 }
 
 func main() {
