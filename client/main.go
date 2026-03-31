@@ -1,39 +1,38 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"strings"
+	"log"
+
 	"github.com/chzyer/readline"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	pb "github.com/EricHayter/yakv/proto"
 )
 
-func is_exit_keyword(line string) bool {
-	line = strings.ToLower(line)
-	var exit_keywords = [...]string{"q", "quit", "exit"}
-	for _, exit_keyword := range exit_keywords {
-		if strings.ToLower(line) == exit_keyword {
-			return true
-		}
-	}
-	return false
-}
+var (
+	addr = flag.String("addr", "localhost:50051", "the address to connect to")
+)
 
-func is_help_keyword(line string) bool {
-	return strings.ToLower(line) == "help"
-}
+const (
+	welcomeString = `Welcome to YAKV (Yet Another Key Value (Store))
+Type "help" for more information.`
+)
 
 func main() {
-	const welcome_string string =
-`Welcome to YAKV (Yet Another Key Value (Store))
-Type "help" for more information.`
-	const help_string string =
-`You are using yakvs, the command-line interface to yakv
-Type:  "help" for help with yakv commands
-       "put", or "p" to set a key value
-       "get", or "g" to get a key value
-       "delete", or "d" to delete a key value
-       "q", "quit", "exit" to quit`
+	flag.Parse()
 
-	fmt.Println(welcome_string)
+	// Set up a connection to the server.
+	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	c := pb.NewYakvServerClient(conn)
+
+	fmt.Println(welcomeString)
 
 	rl, err := readline.New("yakv=# ")
 	if err != nil {
@@ -43,12 +42,26 @@ Type:  "help" for help with yakv commands
 
 	for {
 		line, err := rl.Readline()
-		if err != nil || is_exit_keyword(line) {
+		if err != nil {
 			break
-		} else if is_help_keyword(line) {
-			fmt.Println(help_string)
-		} else {
-			println(line)
+		}
+
+		cmd := getCommand(line)
+		switch cmd {
+		case "quit", "exit", "q":
+			return
+		case "help":
+			handleHelpCommand()
+		case "get", "g":
+			handleGetCommand(c, line)
+		case "put", "p":
+			handlePutCommand(c, line)
+		case "delete", "d":
+			handleDeleteCommand(c, line)
+		default:
+			if line != "" {
+				fmt.Printf("ERROR: unknown command '%s'\n", line)
+			}
 		}
 	}
 }
