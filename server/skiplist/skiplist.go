@@ -6,6 +6,17 @@ package main
  * the skiplist struct itself is pretty simple. It's a pointer to the first
  * key-value (kv) pair in the skiplist and a probability which is used in the
  * insert method to determine which level a new value should be inserted at.
+ *
+ * the first node in the list (the head) will always have the maximimum
+ * (non-strict) height of the skiplist. Therefore to determine the height
+ * of the skiplist the first node can be used and the following nodes can be
+ * assumed to have >= its height.
+ *
+ * Each skiplist node contains a key, value pair of strings, and a list of
+ * pointers to the next node at that given level. Therefore the next list
+ * will only contain entries for pointers up to it's own respective height.
+ * for example if a node has a max level of say 3 it will have 4 entries in the
+ * next list even if the skiplist has a global max height of say 7.
  */
 
 import (
@@ -38,13 +49,16 @@ func (list *SkipList) Size() int {
 	return list.size
 }
 
+/* NOTE: this function WILL update the value of nodes with the same key. i.e.
+ * there are NO duplicates keys in the skiplist.
+ */
 func (list *SkipList) Insert(key, value string) {
 	insertLevel := list.randomLevel()
 
 	insertedNode := &skipListNode{
 		key:   key,
 		value: value,
-		next: make([]*skipListNode, insertLevel + 1),
+		next:  make([]*skipListNode, insertLevel+1),
 	}
 
 	// Empty list case
