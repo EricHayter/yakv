@@ -3,39 +3,46 @@ package main
 /* The Key Value server will be using an LSM storage engine. As such, for the
  * implementation of the memtables I will be using a skiplist.
  *
- * This file will contain the implementation of the skiplist
+ * the skiplist struct itself is pretty simple. It's a pointer to the first
+ * key-value (kv) pair in the skiplist and a probability which is used in the
+ * insert method to determine which level a new value should be inserted at.
  */
 
 import (
-	"math/rand"
 	"iter"
+	"math/rand"
 )
+
+const maxLevel = 32
 
 type SkipList struct {
 	promoteProbability float32
-	head *skipListNode
+	head               *skipListNode
+	size               int
 }
 
 type skipListNode struct {
 	key, value string
-	next []*skipListNode
+	next       []*skipListNode
 }
 
-func (list *SkipList) increaseHeight() {
-	if list.head != nil {
-		list.head.next = append(list.head.next, nil)
+func (list *SkipList) randomLevel() int {
+	level := 0
+	for level < maxLevel-1 && rand.Float32() <= list.promoteProbability {
+		level++
 	}
+	return level
 }
 
-// This should update not insert a new one too btw
+func (list *SkipList) Size() int {
+	return list.size
+}
+
 func (list *SkipList) Insert(key, value string) {
-	insertLevel := 0
-	for rand.Float32() <= list.promoteProbability {
-		insertLevel++
-	}
+	insertLevel := list.randomLevel()
 
 	insertedNode := &skipListNode{
-		key: key,
+		key:   key,
 		value: value,
 		next: make([]*skipListNode, insertLevel + 1),
 	}
@@ -43,22 +50,31 @@ func (list *SkipList) Insert(key, value string) {
 	// Empty list case
 	if list.head == nil {
 		list.head = insertedNode
+		list.size++
 		return
 	}
 
+	// Update head if key matches
 	if list.head.key == key {
 		list.head.value = value
 		return
 	}
 
-	// new head of list
+	// New head of list
 	if key < list.head.key {
 		oldListHeight := len(list.head.next)
-		insertedNode.next = make([]*skipListNode, max(insertLevel, oldListHeight))
+		maxHeight := max(insertLevel+1, oldListHeight)
+
+		// Reallocate next array to accommodate max height
+		insertedNode.next = make([]*skipListNode, maxHeight)
+
+		// Point all levels to the old head
 		for height := range oldListHeight {
 			insertedNode.next[height] = list.head
 		}
+
 		list.head = insertedNode
+		list.size++
 		return
 	}
 
@@ -66,17 +82,17 @@ func (list *SkipList) Insert(key, value string) {
 	// height is not big enough to accomodate for that height. e.g. level 0
 	// requires a height of ast least 1.
 	for numLevels <= insertLevel {
-		list.increaseHeight()
+		list.head.next = append(list.head.next, nil)
 		numLevels++
 	}
 
-	// find the location of where the key should be placed
+	// Find the location of where the key should be placed
 	p := list.head
 
 	level := numLevels - 1
 	for level >= 0 {
-		// find the node at this level that we will insert the new value into
-		// after (or update)
+		// Find the node at this level that we will insert the new value after
+		// (or update)
 		for p.next[level] != nil && key >= p.next[level].key {
 			p = p.next[level]
 		}
@@ -94,6 +110,8 @@ func (list *SkipList) Insert(key, value string) {
 
 		level -= 1
 	}
+
+	list.size++
 }
 
 func (list *SkipList) Delete(key string) bool {
@@ -107,36 +125,42 @@ func (list *SkipList) Delete(key string) bool {
 
 	// Special case: first kv pair in list is the node to delete
 	if p.key == key {
-		second_element := p.next[0]
-		if second_element != nil {
-			for height := len(second_element.next); height < len(p.next); height++ {
-				second_element.next = append(second_element.next, p.next[height])
+		secondElement := p.next[0]
+		if secondElement != nil {
+			for height := len(secondElement.next); height < len(p.next); height++ {
+				secondElement.next = append(secondElement.next, p.next[height])
 			}
 		}
-		list.head = second_element
+		list.head = secondElement
+		list.size--
 		return true
 	}
 
+	deleted := false
 	for level >= 0 {
-		// move p right until the next pointer is null OR the next pointer
-		// is larger than the insertion key
+		// Move p right until the next pointer is null OR the next pointer
+		// is larger than the deletion key
 		for p.next[level] != nil && key > p.next[level].key {
 			p = p.next[level]
 		}
 
-		// three cases for stopping the above loop:
+		// Three cases for stopping the above loop:
 		// 1. next is nil (in which case we just move down)
 		// 2. next is strictly bigger than our key (move down as well)
-		// 3. next is our kv pair we want to delete.
+		// 3. next is our kv pair we want to delete
 
-		// we Handle the last case here
+		// Handle the matched case
 		if p.next[level] != nil && p.next[level].key == key {
+			deleted = true
 			p.next[level] = p.next[level].next[level]
 		}
 
 		level -= 1
 	}
-	return false
+	if deleted {
+		list.size--
+	}
+	return deleted
 }
 
 func (list *SkipList) Get(key string) (string, bool) {
@@ -152,8 +176,8 @@ func (list *SkipList) Get(key string) (string, bool) {
 	p := list.head
 	height := numLevels - 1
 	for height >= 0 {
-		// move p right until the next pointer is null OR the next pointer
-		// is larger than the insertion key
+		// Move p right until the next pointer is null OR the next pointer
+		// is larger than the search key
 		for p.next[height] != nil && key >= p.next[height].key {
 			p = p.next[height]
 		}
@@ -162,7 +186,7 @@ func (list *SkipList) Get(key string) (string, bool) {
 			return p.value, true
 		}
 
-		// check the level bellow
+		// Check the level below
 		height -= 1
 	}
 	return "", false
@@ -180,10 +204,10 @@ func (list *SkipList) Items() iter.Seq[*skipListNode] {
 	}
 }
 
-
 func NewSkipList() *SkipList {
 	return &SkipList{
 		promoteProbability: 0.5,
-		head: nil,
+		head:               nil,
+		size:               0,
 	}
 }
