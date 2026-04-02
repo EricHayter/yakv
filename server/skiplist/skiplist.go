@@ -1,4 +1,4 @@
-package main
+package skiplist
 
 /* The Key Value server will be using an LSM storage engine. As such, for the
  * implementation of the memtables I will be using a skiplist.
@@ -11,32 +11,40 @@ package main
  * The sentinel node has maxLevel pointers (currently 32), allowing the skiplist
  * to accommodate nodes at any level without dynamic height adjustments.
  *
- * Each skiplist node contains a key-value pair of strings and a list of
- * pointers to the next node at each level. A node's next list only contains
- * entries up to its own height. For example, if a node has a max level of 3,
- * it will have 4 entries in the next list (levels 0-3), even if other nodes
- * in the skiplist have higher levels.
+ * Each skiplist node contains a key-value pair and a list of pointers to the
+ * next node at each level. A node's next list only contains entries up to its
+ * own height. For example, if a node has a max level of 3, it will have 4
+ * entries in the next list (levels 0-3), even if other nodes in the skiplist
+ * have higher levels.
  */
 
 import (
+	"cmp"
 	"iter"
 	"math/rand"
 )
 
 const maxLevel = 32
 
-type SkipList struct {
+type SkipList[K cmp.Ordered, V any] struct {
 	promoteProbability float32
-	head           	   *skipListNode // head of list (sentinel node)
+	head               *skipListNode[K, V] // head of list (sentinel node)
 	size               int
 }
 
-type skipListNode struct {
-	key, value string
-	next       []*skipListNode
+type skipListNode[K cmp.Ordered, V any] struct {
+	key   K
+	value V
+	next  []*skipListNode[K, V]
 }
 
-func (list *SkipList) randomLevel() int {
+// Entry represents a key-value pair in the skiplist
+type Entry[K cmp.Ordered, V any] struct {
+	Key   K
+	Value V
+}
+
+func (list *SkipList[K, V]) randomLevel() int {
 	level := 0
 	for level < maxLevel-1 && rand.Float32() <= list.promoteProbability {
 		level++
@@ -44,18 +52,18 @@ func (list *SkipList) randomLevel() int {
 	return level
 }
 
-func (list *SkipList) Size() int {
+func (list *SkipList[K, V]) Size() int {
 	return list.size
 }
 
 // Insert adds or updates a key-value pair in the skiplist.
 // If the key already exists, its value is updated.
 // There are NO duplicate keys in the skiplist.
-func (list *SkipList) Insert(key, value string) {
+func (list *SkipList[K, V]) Insert(key K, value V) {
 	insertLevel := list.randomLevel()
 
 	// Track predecessor nodes at each level
-	update := make([]*skipListNode, maxLevel)
+	update := make([]*skipListNode[K, V], maxLevel)
 	p := list.head
 
 	// Find insertion point and track predecessors
@@ -73,10 +81,10 @@ func (list *SkipList) Insert(key, value string) {
 	}
 
 	// Create new node
-	newNode := &skipListNode{
+	newNode := &skipListNode[K, V]{
 		key:   key,
 		value: value,
-		next:  make([]*skipListNode, insertLevel+1),
+		next:  make([]*skipListNode[K, V], insertLevel+1),
 	}
 
 	// Insert node at each level
@@ -88,8 +96,8 @@ func (list *SkipList) Insert(key, value string) {
 	list.size++
 }
 
-func (list *SkipList) Delete(key string) bool {
-	update := make([]*skipListNode, maxLevel)
+func (list *SkipList[K, V]) Delete(key K) bool {
+	update := make([]*skipListNode[K, V], maxLevel)
 	p := list.head
 
 	// Find the node and track predecessors
@@ -115,7 +123,7 @@ func (list *SkipList) Delete(key string) bool {
 	return true
 }
 
-func (list *SkipList) Get(key string) (string, bool) {
+func (list *SkipList[K, V]) Get(key K) (V, bool) {
 	p := list.head
 
 	// Search from top level down
@@ -131,15 +139,16 @@ func (list *SkipList) Get(key string) (string, bool) {
 		return p.value, true
 	}
 
-	return "", false
+	var zero V
+	return zero, false
 }
 
-func (list *SkipList) Items() iter.Seq[*skipListNode] {
-	return func(yield func(*skipListNode) bool) {
+func (list *SkipList[K, V]) Items() iter.Seq[Entry[K, V]] {
+	return func(yield func(Entry[K, V]) bool) {
 		// Start from first real node (skip sentinel)
 		p := list.head.next[0]
 		for p != nil {
-			if !yield(p) {
+			if !yield(Entry[K, V]{Key: p.key, Value: p.value}) {
 				return
 			}
 			p = p.next[0]
@@ -147,17 +156,17 @@ func (list *SkipList) Items() iter.Seq[*skipListNode] {
 	}
 }
 
-func NewSkipList() *SkipList {
+func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
 	// Create sentinel node with maxLevel pointers
-	sentinel := &skipListNode{
-		key:   "", // Sentinel has no meaningful key
-		value: "",
-		next:  make([]*skipListNode, maxLevel),
+	sentinel := &skipListNode[K, V]{
+		key:   *new(K), // Zero value of K
+		value: *new(V), // Zero value of V
+		next:  make([]*skipListNode[K, V], maxLevel),
 	}
 
-	return &SkipList{
+	return &SkipList[K, V]{
 		promoteProbability: 0.5,
-		head:           sentinel,
+		head:               sentinel,
 		size:               0,
 	}
 }

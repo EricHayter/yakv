@@ -1,4 +1,4 @@
-package main
+package skiplist
 
 import (
 	"fmt"
@@ -7,17 +7,17 @@ import (
 )
 
 // Helper function to dump skiplist contents using the iterator
-func dumpSkipList(t *testing.T, list *SkipList) {
+func dumpSkipList(t *testing.T, list *SkipList[string, string]) {
 	t.Helper()
 	var items []string
-	for node := range list.Items() {
-		items = append(items, fmt.Sprintf("(%s: %s)", node.key, node.value))
+	for entry := range list.Items() {
+		items = append(items, fmt.Sprintf("(%s: %s)", entry.Key, entry.Value))
 	}
 	t.Logf("SkipList contents: [%s]", strings.Join(items, ", "))
 }
 
 // Helper function to visualize the entire skip list hierarchy
-func dumpSkipListHierarchy(t *testing.T, list *SkipList) {
+func dumpSkipListHierarchy(t *testing.T, list *SkipList[string, string]) {
 	t.Helper()
 
 	if list.head == nil {
@@ -48,7 +48,7 @@ func dumpSkipListHierarchy(t *testing.T, list *SkipList) {
 }
 
 func TestSkipListInsert(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	const key string = "Key"
 	const value string = "Value"
 	skipList.Insert(key, value)
@@ -68,7 +68,7 @@ func TestSkipListInsert(t *testing.T) {
 }
 
 func TestSkipListGetEmpty(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	_, found := skipList.Get("nonexistent")
 
 	if found {
@@ -78,7 +78,7 @@ func TestSkipListGetEmpty(t *testing.T) {
 }
 
 func TestSkipListGetNonExistent(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	skipList.Insert("a", "1")
 	skipList.Insert("c", "3")
 
@@ -91,7 +91,7 @@ func TestSkipListGetNonExistent(t *testing.T) {
 }
 
 func TestSkipListMultipleInserts(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	testData := map[string]string{
 		"apple":  "red",
 		"banana": "yellow",
@@ -125,7 +125,7 @@ func TestSkipListMultipleInserts(t *testing.T) {
 }
 
 func TestSkipListInsertAscending(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	keys := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
 
 	for _, k := range keys {
@@ -152,7 +152,7 @@ func TestSkipListInsertAscending(t *testing.T) {
 }
 
 func TestSkipListInsertDescending(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	keys := []string{"j", "i", "h", "g", "f", "e", "d", "c", "b", "a"}
 
 	for _, k := range keys {
@@ -179,7 +179,7 @@ func TestSkipListInsertDescending(t *testing.T) {
 }
 
 func TestSkipListUpdateValue(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	key := "key1"
 
 	// Insert initial value
@@ -206,7 +206,7 @@ func TestSkipListUpdateValue(t *testing.T) {
 }
 
 func TestSkipListEdgeCases(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 
 	// Empty string keys
 	skipList.Insert("", "empty_key")
@@ -229,7 +229,7 @@ func TestSkipListEdgeCases(t *testing.T) {
 }
 
 func TestSkipListKeyOrdering(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 
 	// Test lexicographic ordering
 	keys := []string{"a", "aa", "aaa", "b", "ab", "abc"}
@@ -257,7 +257,7 @@ func TestSkipListKeyOrdering(t *testing.T) {
 }
 
 func TestSkipListNumericStringKeys(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 
 	// Note: These are lexicographic, not numeric ordering
 	// "10" < "2" in lexicographic order
@@ -286,7 +286,7 @@ func TestSkipListNumericStringKeys(t *testing.T) {
 }
 
 func TestSkipListLargeDataset(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	n := 1000
 
 	// Insert many items
@@ -319,7 +319,7 @@ func TestSkipListLargeDataset(t *testing.T) {
 }
 
 func TestSkipListDelete(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	skipList.Insert("a", "1")
 	skipList.Insert("b", "2")
 	skipList.Insert("c", "3")
@@ -355,7 +355,7 @@ func TestSkipListDelete(t *testing.T) {
 }
 
 func TestSkipListDeleteNonExistent(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	skipList.Insert("a", "1")
 
 	// Delete non-existent key should not panic
@@ -371,7 +371,7 @@ func TestSkipListDeleteNonExistent(t *testing.T) {
 }
 
 func TestSkipListDeleteAndReinsert(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	key := "key1"
 
 	// Insert, delete, then reinsert
@@ -396,7 +396,7 @@ func TestSkipListDeleteAndReinsert(t *testing.T) {
 }
 
 func TestSkipListDeleteAll(t *testing.T) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	keys := []string{"a", "b", "c", "d", "e"}
 
 	// Insert all
@@ -427,7 +427,7 @@ func TestSkipListDeleteAll(t *testing.T) {
 
 // Benchmark tests
 func BenchmarkSkipListInsert(b *testing.B) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i)
@@ -436,7 +436,7 @@ func BenchmarkSkipListInsert(b *testing.B) {
 }
 
 func BenchmarkSkipListGet(b *testing.B) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	// Pre-populate with data
 	for i := 0; i < 10000; i++ {
 		key := fmt.Sprintf("key%04d", i)
@@ -451,7 +451,7 @@ func BenchmarkSkipListGet(b *testing.B) {
 }
 
 func BenchmarkSkipListDelete(b *testing.B) {
-	skipList := NewSkipList()
+	skipList := NewSkipList[string, string]()
 	// Pre-populate with data
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%04d", i)
