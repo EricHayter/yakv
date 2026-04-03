@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-// Cache is a thread-safe LRU cache that tracks items by ID.
-// When the cache is full and a new item is added, it returns the ID of the evicted item.
-type Cache[K comparable] struct {
+// Replacer is a thread-safe LRU replacer that tracks items by key.
+// It helps determine which item should be evicted based on least-recently-used policy.
+type Replacer[K comparable] struct {
 	mu       sync.Mutex
-	capacity int
-	cache    map[K]*list.Element
+	cond     *sync.Cond
+	items    map[K]*list.Element
 	lru      *list.List
 }
 
@@ -18,84 +18,91 @@ type entry[K comparable] struct {
 	key K
 }
 
-// New creates a new LRU cache with the specified capacity.
-func New[K comparable](capacity int) *Cache[K] {
-	return &Cache[K]{
-		capacity: capacity,
-		cache:    make(map[K]*list.Element),
+// New creates a new LRU replacer
+func New[K comparable]() *Replacer[K] {
+	r := &Replacer[K]{
+		items:    make(map[K]*list.Element),
 		lru:      list.New(),
 	}
+	r.cond = sync.NewCond(&r.mu)
+	return r
 }
 
-// Get retrieves an item from the cache and marks it as recently used.
+// Get marks an item as recently used.
 // Returns true if the item was found, false otherwise.
-func (c *Cache[K]) Get(key K) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (r *Replacer[K]) Get(key K) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	if elem, ok := c.cache[key]; ok {
-		c.lru.MoveToFront(elem)
+	if elem, ok := r.items[key]; ok {
+		r.lru.MoveToFront(elem)
 		return true
 	}
 	return false
 }
 
-// Put adds an item to the cache.
-// If the cache is full, it returns the key of the evicted item and true.
-// If no eviction occurred, it returns the zero value of K and false.
-func (c *Cache[K]) Put(key K) (evicted K, wasEvicted bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// Push adds an item or marks it as recently used if it already exists.
+func (r *Replacer[K]) Push(key K) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	// If key already exists, just mark as recently used
-	if elem, ok := c.cache[key]; ok {
-		c.lru.MoveToFront(elem)
+	if elem, ok := r.items[key]; ok {
+		r.lru.MoveToFront(elem)
 		return
 	}
 
 	// Add new entry
-	elem := c.lru.PushFront(entry[K]{key: key})
-	c.cache[key] = elem
+	elem := r.lru.PushFront(entry[K]{key: key})
+	r.items[key] = elem
 
-	// Evict if over capacity
-	if c.lru.Len() > c.capacity {
-		oldest := c.lru.Back()
-		if oldest != nil {
-			c.lru.Remove(oldest)
-			e := oldest.Value.(entry[K])
-			delete(c.cache, e.key)
-			return e.key, true
-		}
-	}
-
-	return
+	// Signal that an item is available
+	r.cond.Signal()
 }
 
-// Remove removes an item from the cache.
-// Returns true if the item was found and removed, false otherwise.
-func (c *Cache[K]) Remove(key K) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// Pop removes and returns the least recently used item.
+// Blocks until an item is available.
+func (r *Replacer[K]) Pop() K {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	if elem, ok := c.cache[key]; ok {
-		c.lru.Remove(elem)
-		delete(c.cache, key)
+	// Wait until there's an item available
+	for r.lru.Len() == 0 {
+		r.cond.Wait()
+	}
+
+	oldest := r.lru.Back()
+	r.lru.Remove(oldest)
+	e := oldest.Value.(entry[K])
+	delete(r.items, e.key)
+	return e.key
+}
+
+// Remove removes an item from the replacer.
+// Returns true if the item was found and removed, false otherwise.
+func (r *Replacer[K]) Remove(key K) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if elem, ok := r.items[key]; ok {
+		r.lru.Remove(elem)
+		delete(r.items, key)
 		return true
 	}
 	return false
 }
 
-// Len returns the current number of items in the cache.
-func (c *Cache[K]) Len() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.lru.Len()
+// Len returns the current number of items in the replacer.
+func (r *Replacer[K]) Len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lru.Len()
 }
 
-// Clear removes all items from the cache.
-func (c *Cache[K]) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lru.Init()
-	c.cache = make(map[K]*list.Element)
+// Clear removes all items from the replacer.
+func (r *Replacer[K]) Clear() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lru.Init()
+	r.items = make(map[K]*list.Element)
 }

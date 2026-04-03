@@ -24,7 +24,7 @@ type PageData [PageSize]byte
 type DiskManager struct {
 	fileHandleCount uint8
 	fileHandleMap   map[FileId]*os.File
-	fileCache       *lru.Cache[FileId]
+	fileReplacer    *lru.Replacer[FileId]
 }
 
 func New() (*DiskManager, error) {
@@ -40,7 +40,7 @@ func New() (*DiskManager, error) {
 
 	return &DiskManager{
 		fileHandleMap: make(map[FileId]*os.File),
-		fileCache:     lru.New[FileId](MaxFileHandles),
+		fileReplacer:  lru.New[FileId](),
 	}, nil
 }
 
@@ -72,15 +72,17 @@ func (diskManager *DiskManager) CreateFileWithId(fileId FileId) error {
 		return err
 	}
 
-	// Add to cache so it's immediately ready for use
-	removedKey, evicted := diskManager.fileCache.Put(fileId)
-	if evicted {
-		removedFile := diskManager.fileHandleMap[removedKey]
-		removedFile.Close()
-		delete(diskManager.fileHandleMap, removedKey)
-		log.Printf("Evicted file handle from cache: fileId=%d", removedKey)
+	// Check if we need to evict a file handle
+	if len(diskManager.fileHandleMap) >= MaxFileHandles {
+		evictedFileId := diskManager.fileReplacer.Pop()
+		evictedFile := diskManager.fileHandleMap[evictedFileId]
+		evictedFile.Close()
+		delete(diskManager.fileHandleMap, evictedFileId)
+		log.Printf("Evicted file handle: fileId=%d", evictedFileId)
 	}
 
+	// Add to replacer and file handle map
+	diskManager.fileReplacer.Push(fileId)
 	diskManager.fileHandleMap[fileId] = file
 	log.Printf("Created file: fileId=%d, path=%s", fileId, filePath)
 	return nil
@@ -155,7 +157,7 @@ func (diskManager *DiskManager) WritePage(fileId FileId, pageId PageId, data *Pa
 func (diskManager *DiskManager) loadFile(fileId FileId) (*os.File, error) {
 	file, pres := diskManager.fileHandleMap[fileId]
 	if pres {
-		diskManager.fileCache.Get(fileId)  // Mark as recently used
+		diskManager.fileReplacer.Get(fileId)  // Mark as recently used
 		return file, nil
 	}
 
@@ -168,17 +170,17 @@ func (diskManager *DiskManager) loadFile(fileId FileId) (*os.File, error) {
 
 	log.Printf("Opened file: fileId=%d", fileId)
 
-	// Add to cache and handle eviction
-	removedKey, evicted := diskManager.fileCache.Put(fileId)
-
-	// If the cache was full, close the evicted file
-	if evicted {
-		removedFile := diskManager.fileHandleMap[removedKey]
-		removedFile.Close()
-		delete(diskManager.fileHandleMap, removedKey)
-		log.Printf("Evicted file handle from cache: fileId=%d", removedKey)
+	// Check if we need to evict a file handle
+	if len(diskManager.fileHandleMap) >= MaxFileHandles {
+		evictedFileId := diskManager.fileReplacer.Pop()
+		evictedFile := diskManager.fileHandleMap[evictedFileId]
+		evictedFile.Close()
+		delete(diskManager.fileHandleMap, evictedFileId)
+		log.Printf("Evicted file handle: fileId=%d", evictedFileId)
 	}
 
+	// Add to replacer and file handle map
+	diskManager.fileReplacer.Push(fileId)
 	diskManager.fileHandleMap[fileId] = file
 	return file, nil
 }
