@@ -22,7 +22,6 @@ type PageData [PageSize]byte
 // (PageId is uint16, limiting pages per file to 65536)
 
 type DiskManager struct {
-	fileHandleCount uint8
 	fileHandleMap   map[FileId]*os.File
 	fileReplacer    *lru.Replacer[FileId]
 }
