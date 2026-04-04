@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	yakvDirectory = "yakv"
+	YakvDirectory = "yakv"
 	PageSize = 1 << 12  // 4096 bytes
 	MaxFileHandles = 256
 )
@@ -28,14 +28,14 @@ type DiskManager struct {
 
 func New() (*DiskManager, error) {
 	// Create yakv directory if it doesn't exist
-	err := os.MkdirAll(yakvDirectory, 0755)
+	err := os.MkdirAll(YakvDirectory, 0755)
 	if err != nil {
 		log.Printf("Failed to create yakv directory: %v", err)
 		return nil, err
 	}
 
 	log.Printf("DiskManager initialized: directory=%s, max_handles=%d, page_size=%d",
-		yakvDirectory, MaxFileHandles, PageSize)
+		YakvDirectory, MaxFileHandles, PageSize)
 
 	return &DiskManager{
 		fileHandleMap: make(map[FileId]*os.File),
