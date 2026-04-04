@@ -39,15 +39,45 @@ func (page *Page) Close() {
 	page.bufferManager.unpinPage(page.frameId)
 }
 
-// GetBuffer returns a pointer to the page's buffer with proper synchronization
-func (page *Page) GetBuffer() *disk_manager.PageData {
+// RLock acquires a read lock on the page's buffer.
+// Multiple goroutines can hold read locks simultaneously.
+// Must be paired with RUnlock.
+func (page *Page) RLock() {
 	frame := &page.bufferManager.frames[page.frameId]
 	frame.mut.RLock()
-	defer frame.mut.RUnlock()
+}
+
+// RUnlock releases a read lock on the page's buffer.
+func (page *Page) RUnlock() {
+	frame := &page.bufferManager.frames[page.frameId]
+	frame.mut.RUnlock()
+}
+
+// Lock acquires an exclusive write lock on the page's buffer.
+// Only one goroutine can hold a write lock at a time.
+// Must be paired with Unlock.
+func (page *Page) Lock() {
+	frame := &page.bufferManager.frames[page.frameId]
+	frame.mut.Lock()
+}
+
+// Unlock releases an exclusive write lock on the page's buffer.
+func (page *Page) Unlock() {
+	frame := &page.bufferManager.frames[page.frameId]
+	frame.mut.Unlock()
+}
+
+// GetBuffer returns a pointer to the page's buffer.
+// The page must be pinned (not closed) during buffer access.
+// Callers should use RLock/RUnlock for reading or Lock/Unlock for writing
+// to ensure proper synchronization when accessing the buffer.
+func (page *Page) GetBuffer() *disk_manager.PageData {
+	frame := &page.bufferManager.frames[page.frameId]
 	return frame.buffer
 }
 
-// MarkDirty marks the page as modified
+// MarkDirty marks the page as modified.
+// Acquires the page lock internally.
 func (page *Page) MarkDirty() {
 	frame := &page.bufferManager.frames[page.frameId]
 	frame.mut.Lock()
