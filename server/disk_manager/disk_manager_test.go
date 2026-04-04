@@ -37,7 +37,7 @@ func TestNew(t *testing.T) {
 		t.Error("Expected fileHandleMap to be initialized")
 	}
 
-	if dm.fileCache == nil {
+	if dm.fileReplacer == nil {
 		t.Error("Expected fileCache to be initialized")
 	}
 }
@@ -160,7 +160,7 @@ func TestWriteAndReadPage(t *testing.T) {
 
 	// Create test data
 	writeData := &PageData{}
-	for i := 0; i < PageSize; i++ {
+	for i := range PageSize {
 		writeData[i] = byte(i % 256)
 	}
 
@@ -220,30 +220,30 @@ func TestWritePage_MultiplePages(t *testing.T) {
 	}
 
 	// Write to pages 0, 1, 2
-	for pageId := PageId(0); pageId < 3; pageId++ {
+	for pageId := range 3 {
 		data := &PageData{}
 		// Fill with page-specific pattern
-		for i := 0; i < PageSize; i++ {
+		for i := range PageSize {
 			data[i] = byte(pageId)
 		}
 
-		err = dm.WritePage(fileId, pageId, data)
+		err = dm.WritePage(fileId, PageId(pageId), data)
 		if err != nil {
 			t.Fatalf("Failed to write page %d: %v", pageId, err)
 		}
 	}
 
 	// Read back and verify
-	for pageId := PageId(0); pageId < 3; pageId++ {
+	for pageId := range 3 {
 		data := &PageData{}
-		err = dm.ReadPage(fileId, pageId, data)
+		err = dm.ReadPage(fileId, PageId(pageId), data)
 		if err != nil {
 			t.Fatalf("Failed to read page %d: %v", pageId, err)
 		}
 
 		// Verify pattern
 		expected := byte(pageId)
-		for i := 0; i < PageSize; i++ {
+		for i := range PageSize {
 			if data[i] != expected {
 				t.Errorf("Page %d: expected byte %d at offset %d, got %d",
 					pageId, expected, i, data[i])
@@ -267,7 +267,7 @@ func TestReadPage_MultiplePages(t *testing.T) {
 	patterns := []byte{0xAA, 0xBB, 0xCC}
 	for i, pattern := range patterns {
 		data := &PageData{}
-		for j := 0; j < PageSize; j++ {
+		for j := range PageSize {
 			data[j] = pattern
 		}
 
@@ -308,7 +308,7 @@ func TestWriteAndReadPage_MultipleFiles(t *testing.T) {
 
 		data := &PageData{}
 		// Fill with file-specific pattern
-		for i := 0; i < PageSize; i++ {
+		for i := range PageSize {
 			data[i] = byte(fileId)
 		}
 
@@ -342,7 +342,7 @@ func TestPersistence_DataSurvivesClose(t *testing.T) {
 
 	fileId := FileId(700)
 	testData := &PageData{}
-	for i := 0; i < PageSize; i++ {
+	for i := range PageSize {
 		testData[i] = byte(i % 256)
 	}
 
@@ -478,7 +478,7 @@ func TestWritePage_ExtendsFile(t *testing.T) {
 
 	// Write to page 5 (should extend file beyond initial page)
 	data := &PageData{}
-	for i := 0; i < PageSize; i++ {
+	for i := range PageSize {
 		data[i] = 0xFF
 	}
 
