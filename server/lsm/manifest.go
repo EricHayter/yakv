@@ -39,6 +39,12 @@ var (
  * <fileId for nth table in level n> [fileId]
  */
 
+const (
+	ManifestFileName = "manifest"
+)
+
+var ManifestPath = filepath.Join(disk_manager.YakvDirectory, ManifestFileName)
+
 type Manifest struct {
    diskManager 	*disk_manager.DiskManager
    version 		Version
@@ -120,19 +126,27 @@ func DeserializeVersion(r io.Reader) (*Version, error) {
 }
 
 func (manifest *Manifest) FlushLsmMetadata() error {
-	/* Create a temporary file in the operating system's temp directory, then
-	 * serialize the version data. Once the file is written, an atomic rename
-	 * is done such that the old data is only replaced IF we successfully
-	 * write the new version data.
+	/* Create a temporary file in the yakv directory, then serialize the
+	 * version data. Once the file is written, an atomic rename is done such
+	 * that the old data is only replaced IF we successfully write the new
+	 * version data.
 	 */
-	const manifestFileName = "manifest"
-	manifestPath := filepath.Join(disk_manager.YakvDirectory, manifestFileName)
+	manifestPath := ManifestPath
 
-	f, err := os.CreateTemp("", manifestFileName)
+	// Create temp file in yakv directory (same filesystem for atomic rename)
+	f, err := os.CreateTemp(disk_manager.YakvDirectory, ManifestFileName+"-*.tmp")
 	if err != nil {
 		return err
 	}
 	tempPath := f.Name()
+
+	// Cleanup on error
+	defer func() {
+		if f != nil {
+			f.Close()
+			os.Remove(tempPath)
+		}
+	}()
 
 	if err := manifest.version.Serialize(f); err != nil {
 		return err
