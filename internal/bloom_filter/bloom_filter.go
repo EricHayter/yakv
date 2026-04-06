@@ -6,11 +6,12 @@ import (
 	"github.com/twmb/murmur3"
 	"io"
 	"encoding/binary"
+	"github.com/EricHayter/yakv/internal/bitpack"
 )
 
 type BloomFilter struct {
 	filters []hash.Hash32 // k hash functions
-	bits []byte	// m bits
+	bits []bool	// m bits
 }
 
 // Maybe do this auto scaling with a minimum acceptable rate?
@@ -31,7 +32,7 @@ func New(numBits uint, numHashFunctions uint) (*BloomFilter, error) {
 
 	bloomFilter := &BloomFilter{
 		filters: make([]hash.Hash32, numHashFunctions),
-		bits: make([]byte, numBits),
+		bits: make([]bool, numBits),
 	}
 
 	for i := range numHashFunctions {
@@ -46,7 +47,7 @@ func (bf *BloomFilter) Insert(value []byte) {
 		filter.Write(value)
 		index := filter.Sum32() % uint32(len(bf.bits))
 		filter.Reset()
-		bf.bits[index] = 1
+		bf.bits[index] = true
 	}
 }
 
@@ -56,7 +57,7 @@ func (bf *BloomFilter) Present(value []byte) bool {
 		filter.Write(value)
 		index := filter.Sum32() % uint32(len(bf.bits))
 		filter.Reset()
-		if bf.bits[index] != 1 {
+		if !bf.bits[index] {
 			return false
 		}
 	}
@@ -74,9 +75,8 @@ func (bf *BloomFilter) Serialize(w io.Writer) error {
 		return err
 	}
 
-
-	// write out bit array
-	if err := binary.Write(w, binary.LittleEndian, bf.bits); err != nil {
+	// Write bitpacked bit array
+	if err := bitpack.Serialize(w, bf.bits); err != nil {
 		return err
 	}
 
@@ -99,7 +99,9 @@ func DeserializeBloomFilter(r io.Reader) (*BloomFilter, error) {
 		return nil, err
 	}
 
-	if err := binary.Read(r, binary.LittleEndian, &bf.bits); err != nil {
+	// Deserialize bitpacked data
+	bf.bits, err = bitpack.Deserialize(r)
+	if err != nil {
 		return nil, err
 	}
 
