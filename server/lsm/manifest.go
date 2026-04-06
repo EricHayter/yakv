@@ -4,9 +4,9 @@ import (
 	"os"
 	"io"
 	"errors"
-	"github.com/EricHayter/yakv/server/disk_manager"
 	"encoding/binary"
 	"path/filepath"
+	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
 var (
@@ -41,18 +41,19 @@ var (
 
 const (
 	ManifestFileName = "manifest"
+	YakvDirectory = "yakv"
 )
 
-var ManifestPath = filepath.Join(disk_manager.YakvDirectory, ManifestFileName)
+var ManifestPath = filepath.Join(YakvDirectory, ManifestFileName)
 
 type Manifest struct {
-   diskManager 	*disk_manager.DiskManager
+   storageManager 	*storage_manager.StorageManager
    version 		Version
 }
 
 type Version struct {
 	lastTimestamp uint64
-	sstables [][]disk_manager.FileId
+	sstables [][]storage_manager.FileId
 }
 
 // Serialize writes the version to a writer
@@ -101,7 +102,7 @@ func DeserializeVersion(r io.Reader) (*Version, error) {
 		return nil, err
 	}
 
-	v.sstables = make([][]disk_manager.FileId, numLevels)
+	v.sstables = make([][]storage_manager.FileId, numLevels)
 
 	// Read each level
 	for i := range numLevels {
@@ -110,7 +111,7 @@ func DeserializeVersion(r io.Reader) (*Version, error) {
 			return nil, err
 		}
 
-		v.sstables[i] = make([]disk_manager.FileId, numTables)
+		v.sstables[i] = make([]storage_manager.FileId, numTables)
 
 		// Read file IDs
 		for j := range numTables {
@@ -118,7 +119,7 @@ func DeserializeVersion(r io.Reader) (*Version, error) {
 			if err := binary.Read(r, binary.LittleEndian, &fileId); err != nil {
 				return nil, err
 			}
-			v.sstables[i][j] = disk_manager.FileId(fileId)
+			v.sstables[i][j] = storage_manager.FileId(fileId)
 		}
 	}
 
@@ -134,7 +135,7 @@ func (manifest *Manifest) FlushLsmMetadata() error {
 	manifestPath := ManifestPath
 
 	// Create temp file in yakv directory (same filesystem for atomic rename)
-	f, err := os.CreateTemp(disk_manager.YakvDirectory, ManifestFileName+"-*.tmp")
+	f, err := os.CreateTemp(YakvDirectory, ManifestFileName+"-*.tmp")
 	if err != nil {
 		return err
 	}

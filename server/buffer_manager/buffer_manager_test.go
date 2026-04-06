@@ -9,7 +9,12 @@ import (
 
 // Helper function to create a test buffer manager and clean up after
 func setupTest(t *testing.T, capacity uint16) (*BufferManager, func()) {
-	bm, err := New(capacity)
+	dm, err := disk_manager.New()
+	if err != nil {
+		t.Fatalf("Failed to create disk manager: %v", err)
+	}
+
+	bm, err := New(capacity, dm)
 	if err != nil {
 		t.Fatalf("Failed to create buffer manager: %v", err)
 	}

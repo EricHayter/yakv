@@ -85,12 +85,7 @@ func (page *Page) MarkDirty() {
 	frame.dirty = true
 }
 
-func New(pageCapacity uint16) (*BufferManager, error) {
-	diskManager, err := disk_manager.New()
-	if err != nil {
-		return nil, err
-	}
-
+func New(pageCapacity uint16, diskManager *disk_manager.DiskManager) (*BufferManager, error) {
 	bufferManager := &BufferManager{
 		filePageMap: make(map[pageKey]frameId),
 		frames: make([]frame, pageCapacity),
