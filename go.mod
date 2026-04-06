@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/chzyer/readline v1.5.1 // indirect
+	github.com/twmb/murmur3 v1.1.8 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
