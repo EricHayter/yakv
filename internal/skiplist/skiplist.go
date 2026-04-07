@@ -38,12 +38,6 @@ type skipListNode[K cmp.Ordered, V any] struct {
 	next  []*skipListNode[K, V]
 }
 
-// Entry represents a key-value pair in the skiplist
-type Entry[K cmp.Ordered, V any] struct {
-	Key   K
-	Value V
-}
-
 func (list *SkipList[K, V]) randomLevel() int {
 	level := 0
 	for level < maxLevel-1 && rand.Float32() <= list.promoteProbability {
@@ -143,12 +137,12 @@ func (list *SkipList[K, V]) Get(key K) (V, bool) {
 	return zero, false
 }
 
-func (list *SkipList[K, V]) Items() iter.Seq[Entry[K, V]] {
-	return func(yield func(Entry[K, V]) bool) {
+func (list *SkipList[K, V]) Items() iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
 		// Start from first real node (skip sentinel)
 		p := list.head.next[0]
 		for p != nil {
-			if !yield(Entry[K, V]{Key: p.key, Value: p.value}) {
+			if !yield(p.key, p.value) {
 				return
 			}
 			p = p.next[0]

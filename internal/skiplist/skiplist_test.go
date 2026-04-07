@@ -10,8 +10,8 @@ import (
 func dumpSkipList(t *testing.T, list *SkipList[string, string]) {
 	t.Helper()
 	var items []string
-	for entry := range list.Items() {
-		items = append(items, fmt.Sprintf("(%s: %s)", entry.Key, entry.Value))
+	for key, value := range list.Items() {
+		items = append(items, fmt.Sprintf("(%s: %s)", key, value))
 	}
 	t.Logf("SkipList contents: [%s]", strings.Join(items, ", "))
 }
