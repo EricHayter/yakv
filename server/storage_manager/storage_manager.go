@@ -279,6 +279,19 @@ func (w *PageWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+// WriteAt writes data to the page buffer at the specified offset.
+// Does not affect the internal offset used by Write().
+// Implements io.WriterAt interface.
+func (w *PageWriter) WriteAt(p []byte, off int64) (n int, err error) {
+	if off < 0 || off >= PageSize {
+		return 0, io.EOF
+	}
+	offset := int(off)
+	n = min(len(p), PageSize-offset)
+	copy(w.page.GetBuffer()[offset:offset+n], p[:n])
+	return n, nil
+}
+
 // PageReader implements io.Reader for reading from a Page.
 type PageReader struct {
 	offset int
@@ -300,6 +313,22 @@ func (r *PageReader) Read(p []byte) (n int, err error) {
 	copy(p, r.page.GetBuffer()[r.offset:r.offset+n])
 	r.offset += n
 	if r.offset >= PageSize {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+// ReadAt reads data from the page buffer at the specified offset.
+// Does not affect the internal offset used by Read().
+// Implements io.ReaderAt interface.
+func (r *PageReader) ReadAt(p []byte, off int64) (n int, err error) {
+	if off < 0 || off >= PageSize {
+		return 0, io.EOF
+	}
+	offset := int(off)
+	n = min(len(p), PageSize-offset)
+	copy(p, r.page.GetBuffer()[offset:offset+n])
+	if offset+n >= PageSize {
 		return n, io.EOF
 	}
 	return n, nil
