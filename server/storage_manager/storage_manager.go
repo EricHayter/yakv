@@ -1,6 +1,8 @@
 package storage_manager
 
 import (
+	"io"
+
 	"github.com/EricHayter/yakv/server/buffer_manager"
 	"github.com/EricHayter/yakv/server/disk_manager"
 )
@@ -226,4 +228,54 @@ func (p *Page) GetFileId() FileId {
 // GetPageId returns the page number within its file.
 func (p *Page) GetPageId() PageId {
 	return p.pageId
+}
+
+// PageWriter implements io.Writer for writing to a Page.
+type PageWriter struct {
+	offset int
+	page   *Page
+}
+
+// NewWriter creates a new PageWriter for this page.
+func (p *Page) NewWriter() *PageWriter {
+	return &PageWriter{page: p}
+}
+
+// Write writes data to the page buffer starting at the current offset.
+// Returns the number of bytes written. If the data doesn't fit, it writes
+// as much as possible and the caller can detect a short write by checking n < len(p).
+func (w *PageWriter) Write(p []byte) (n int, err error) {
+	if w.offset >= PageSize {
+		return 0, io.EOF
+	}
+	n = min(len(p), PageSize-w.offset)
+	copy(w.page.GetBuffer()[w.offset:w.offset+n], p[:n])
+	w.offset += n
+	return n, nil
+}
+
+// PageReader implements io.Reader for reading from a Page.
+type PageReader struct {
+	offset int
+	page   *Page
+}
+
+// NewReader creates a new PageReader for this page.
+func (p *Page) NewReader() *PageReader {
+	return &PageReader{page: p, offset: 0}
+}
+
+// Read reads data from the page buffer starting at the current offset.
+// Returns io.EOF when reaching the end of the page.
+func (r *PageReader) Read(p []byte) (n int, err error) {
+	if r.offset >= PageSize {
+		return 0, io.EOF
+	}
+	n = min(len(p), PageSize-r.offset)
+	copy(p, r.page.GetBuffer()[r.offset:r.offset+n])
+	r.offset += n
+	if r.offset >= PageSize {
+		return n, io.EOF
+	}
+	return n, nil
 }
