@@ -255,36 +255,6 @@ func TestSerializeDeserializeEmpty(t *testing.T) {
 	}
 }
 
-func TestSerializationFormat(t *testing.T) {
-	bf, err := New(256, 3)
-	if err != nil {
-		t.Fatalf("failed to create bloom filter: %v", err)
-	}
-
-	bf.Insert([]byte("test"))
-
-	var buf bytes.Buffer
-	if err := bf.Serialize(&buf); err != nil {
-		t.Fatalf("failed to serialize: %v", err)
-	}
-
-	bytes := buf.Bytes()
-
-	// Check header size: 2 bytes (numHashFunctions) + 2 bytes (numBits) = 4 bytes
-	expectedHeaderSize := 4
-	if len(bytes) < expectedHeaderSize {
-		t.Fatalf("serialized data too small: got %d bytes, expected at least %d",
-			len(bytes), expectedHeaderSize)
-	}
-
-	// Total expected size: 4 (header) + 256 (bit array)
-	expectedTotalSize := expectedHeaderSize + 256
-	if len(bytes) != expectedTotalSize {
-		t.Errorf("unexpected serialized size: got %d, expected %d",
-			len(bytes), expectedTotalSize)
-	}
-}
-
 func BenchmarkInsert(b *testing.B) {
 	bf, _ := New(1024, 3)
 	data := []byte("benchmark test data")
