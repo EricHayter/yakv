@@ -87,6 +87,31 @@ func (sm *StorageManager) CreateFileWithId(fileId FileId) error {
 	return sm.diskManager.CreateFileWithId(fileId)
 }
 
+// AddPage adds a single page to the file and returns the new page's ID.
+//
+// Parameters:
+//   - fileId: The file to add a page to
+//
+// Returns:
+//   - PageId: The ID of the newly added page
+//   - error: Any error during page addition
+func (sm *StorageManager) AddPage(fileId FileId) (PageId, error) {
+	return sm.diskManager.AddPage(fileId)
+}
+
+// AddPages adds multiple pages to the file and returns the ID of the first new page.
+//
+// Parameters:
+//   - fileId: The file to add pages to
+//   - count: Number of pages to add
+//
+// Returns:
+//   - PageId: The ID of the first newly added page
+//   - error: Any error during page addition
+func (sm *StorageManager) AddPages(fileId FileId, count uint16) (PageId, error) {
+	return sm.diskManager.AddPages(fileId, count)
+}
+
 // GetPage retrieves a page from the buffer pool, loading from disk if necessary.
 // The page is pinned and won't be evicted until Close() is called on it.
 // Multiple calls to GetPage with the same fileId/pageId will increment the pin count.

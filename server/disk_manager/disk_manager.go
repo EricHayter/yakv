@@ -184,6 +184,47 @@ func (diskManager *DiskManager) loadFile(fileId FileId) (*os.File, error) {
 	return file, nil
 }
 
+// AddPage adds a single page to the file and returns the new page's ID.
+func (diskManager *DiskManager) AddPage(fileId FileId) (PageId, error) {
+	return diskManager.AddPages(fileId, 1)
+}
+
+// AddPages adds multiple pages to the file and returns the ID of the first new page.
+func (diskManager *DiskManager) AddPages(fileId FileId, count uint16) (PageId, error) {
+	if count == 0 {
+		return 0, errors.New("count must be greater than 0")
+	}
+
+	file, err := diskManager.loadFile(fileId)
+	if err != nil {
+		log.Printf("Failed to load file for adding pages: fileId=%d, error=%v", fileId, err)
+		return 0, err
+	}
+
+	// Get current file size
+	stat, err := file.Stat()
+	if err != nil {
+		log.Printf("Failed to stat file: fileId=%d, error=%v", fileId, err)
+		return 0, err
+	}
+
+	currentSize := stat.Size()
+	currentPageCount := PageId(currentSize / PageSize)
+	newSize := currentSize + int64(count)*PageSize
+
+	// Truncate to add new pages
+	err = file.Truncate(newSize)
+	if err != nil {
+		log.Printf("Failed to truncate file: fileId=%d, error=%v", fileId, err)
+		return 0, err
+	}
+
+	log.Printf("Added %d page(s) to file: fileId=%d, old_pages=%d, new_pages=%d",
+		count, fileId, currentPageCount, currentPageCount+PageId(count))
+
+	return currentPageCount, nil
+}
+
 // Close closes all open file handles
 func (diskManager *DiskManager) Close() error {
 	count := len(diskManager.fileHandleMap)
