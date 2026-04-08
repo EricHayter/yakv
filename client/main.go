@@ -17,8 +17,7 @@ var (
 )
 
 const (
-	welcomeString = `Welcome to YAKV (Yet Another Key Value (Store))
-Type "help" for more information.`
+	welcomeString = "\033[1;33m><>\033[0m Welcome to YAKV (Yet Another Key Value (Store))\nType \"help\" for more information."
 )
 
 func main() {
