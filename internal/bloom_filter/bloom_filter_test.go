@@ -1,7 +1,6 @@
 package bloom_filter
 
 import (
-	"bytes"
 	"testing"
 )
 
@@ -74,8 +73,8 @@ func TestNew(t *testing.T) {
 				t.Errorf("expected %d hash functions, got %d", tt.numHashFunctions, len(bf.filters))
 			}
 
-			if len(bf.bits) != int(tt.numBits) {
-				t.Errorf("expected %d bits, got %d", tt.numBits, len(bf.bits))
+			if len(bf.Bits) != int(tt.numBits) {
+				t.Errorf("expected %d bits, got %d", tt.numBits, len(bf.Bits))
 			}
 		})
 	}
@@ -184,77 +183,6 @@ func TestFalsePositiveRate(t *testing.T) {
 		float64(falsePositives)/float64(len(notInserted))*100)
 }
 
-func TestSerializeDeserialize(t *testing.T) {
-	// Create a bloom filter and insert some items
-	bf, err := New(256, 3)
-	if err != nil {
-		t.Fatalf("failed to create bloom filter: %v", err)
-	}
-
-	items := []string{"apple", "banana", "cherry"}
-	for _, item := range items {
-		bf.Insert([]byte(item))
-	}
-
-	// Serialize to buffer
-	var buf bytes.Buffer
-	if err := bf.Serialize(&buf); err != nil {
-		t.Fatalf("failed to serialize: %v", err)
-	}
-
-	// Deserialize from buffer
-	deserialized, err := DeserializeBloomFilter(&buf)
-	if err != nil {
-		t.Fatalf("failed to deserialize: %v", err)
-	}
-
-	// Verify structure
-	if len(deserialized.filters) != len(bf.filters) {
-		t.Errorf("expected %d hash functions, got %d",
-			len(bf.filters), len(deserialized.filters))
-	}
-
-	if len(deserialized.bits) != len(bf.bits) {
-		t.Errorf("expected %d bits, got %d",
-			len(bf.bits), len(deserialized.bits))
-	}
-
-	// Verify all inserted items are still present
-	for _, item := range items {
-		if !deserialized.Present([]byte(item)) {
-			t.Errorf("deserialized bloom filter missing item: %s", item)
-		}
-	}
-
-	// Verify items not inserted still return false
-	if deserialized.Present([]byte("notinserted")) {
-		t.Error("deserialized bloom filter should not contain 'notinserted'")
-	}
-}
-
-func TestSerializeDeserializeEmpty(t *testing.T) {
-	// Test serialization of empty bloom filter
-	bf, err := New(128, 2)
-	if err != nil {
-		t.Fatalf("failed to create bloom filter: %v", err)
-	}
-
-	var buf bytes.Buffer
-	if err := bf.Serialize(&buf); err != nil {
-		t.Fatalf("failed to serialize empty bloom filter: %v", err)
-	}
-
-	deserialized, err := DeserializeBloomFilter(&buf)
-	if err != nil {
-		t.Fatalf("failed to deserialize empty bloom filter: %v", err)
-	}
-
-	// Empty bloom filter should return false for any item
-	if deserialized.Present([]byte("anything")) {
-		t.Error("empty bloom filter should not contain any items")
-	}
-}
-
 func BenchmarkInsert(b *testing.B) {
 	bf, _ := New(1024, 3)
 	data := []byte("benchmark test data")
@@ -273,33 +201,5 @@ func BenchmarkPresent(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		bf.Present(data)
-	}
-}
-
-func BenchmarkSerialize(b *testing.B) {
-	bf, _ := New(1024, 3)
-	bf.Insert([]byte("test1"))
-	bf.Insert([]byte("test2"))
-	bf.Insert([]byte("test3"))
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var buf bytes.Buffer
-		bf.Serialize(&buf)
-	}
-}
-
-func BenchmarkDeserialize(b *testing.B) {
-	bf, _ := New(1024, 3)
-	bf.Insert([]byte("test1"))
-	bf.Insert([]byte("test2"))
-
-	var buf bytes.Buffer
-	bf.Serialize(&buf)
-	data := buf.Bytes()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		DeserializeBloomFilter(bytes.NewReader(data))
 	}
 }

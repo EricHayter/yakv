@@ -4,14 +4,11 @@ import (
 	"hash"
 	"errors"
 	"github.com/twmb/murmur3"
-	"io"
-	"encoding/binary"
-	"github.com/EricHayter/yakv/internal/bitpack"
 )
 
 type BloomFilter struct {
 	filters []hash.Hash32 // k hash functions
-	bits []bool	// m bits
+	Bits []bool	// m bits
 }
 
 // Maybe do this auto scaling with a minimum acceptable rate?
@@ -32,7 +29,7 @@ func New(numBits uint, numHashFunctions uint) (*BloomFilter, error) {
 
 	bloomFilter := &BloomFilter{
 		filters: make([]hash.Hash32, numHashFunctions),
-		bits: make([]bool, numBits),
+		Bits: make([]bool, numBits),
 	}
 
 	for i := range numHashFunctions {
@@ -45,9 +42,9 @@ func New(numBits uint, numHashFunctions uint) (*BloomFilter, error) {
 func (bf *BloomFilter) Insert(value []byte) {
 	for _, filter := range bf.filters {
 		filter.Write(value)
-		index := filter.Sum32() % uint32(len(bf.bits))
+		index := filter.Sum32() % uint32(len(bf.Bits))
 		filter.Reset()
-		bf.bits[index] = true
+		bf.Bits[index] = true
 	}
 }
 
@@ -55,55 +52,11 @@ func (bf *BloomFilter) Insert(value []byte) {
 func (bf *BloomFilter) Present(value []byte) bool {
 	for _, filter := range bf.filters {
 		filter.Write(value)
-		index := filter.Sum32() % uint32(len(bf.bits))
+		index := filter.Sum32() % uint32(len(bf.Bits))
 		filter.Reset()
-		if !bf.bits[index] {
+		if !bf.Bits[index] {
 			return false
 		}
 	}
 	return true
-}
-
-func (bf *BloomFilter) Serialize(w io.Writer) error {
-	// Write number of hash functions
-	if err := binary.Write(w, binary.LittleEndian, uint16(len(bf.filters))); err != nil {
-		return err
-	}
-
-	// Write number of bits
-	if err := binary.Write(w, binary.LittleEndian, uint16(len(bf.bits))); err != nil {
-		return err
-	}
-
-	// Write bitpacked bit array
-	if err := bitpack.Serialize(w, bf.bits); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func DeserializeBloomFilter(r io.Reader) (*BloomFilter, error) {
-	var numHashFunctions uint16
-	if err := binary.Read(r, binary.LittleEndian, &numHashFunctions); err != nil {
-		return nil, err
-	}
-
-	var numBits uint16
-	if err := binary.Read(r, binary.LittleEndian, &numBits); err != nil {
-		return nil, err
-	}
-
-	bf, err := New(uint(numBits), uint(numHashFunctions))
-	if err != nil {
-		return nil, err
-	}
-
-	// Deserialize bitpacked data
-	bf.bits, err = bitpack.Deserialize(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return bf, nil
 }
