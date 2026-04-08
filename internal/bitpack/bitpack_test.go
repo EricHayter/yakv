@@ -1,23 +1,14 @@
 package bitpack
 
 import (
-	"bytes"
 	"testing"
 )
 
 func TestSerializeDeserializeEmpty(t *testing.T) {
 	bools := []bool{}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, 0)
 
 	if len(result) != 0 {
 		t.Errorf("Expected empty slice, got length %d", len(result))
@@ -27,16 +18,8 @@ func TestSerializeDeserializeEmpty(t *testing.T) {
 func TestSerializeSingleTrue(t *testing.T) {
 	bools := []bool{true}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, 1)
 
 	if len(result) != 1 {
 		t.Fatalf("Expected length 1, got %d", len(result))
@@ -50,16 +33,8 @@ func TestSerializeSingleTrue(t *testing.T) {
 func TestSerializeSingleFalse(t *testing.T) {
 	bools := []bool{false}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, 1)
 
 	if len(result) != 1 {
 		t.Fatalf("Expected length 1, got %d", len(result))
@@ -73,16 +48,8 @@ func TestSerializeSingleFalse(t *testing.T) {
 func TestSerializeMultipleBoolsLessThan8(t *testing.T) {
 	bools := []bool{true, false, true, true, false}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -98,16 +65,8 @@ func TestSerializeMultipleBoolsLessThan8(t *testing.T) {
 func TestSerializeExactly8Bools(t *testing.T) {
 	bools := []bool{true, false, true, false, true, false, true, false}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -127,16 +86,8 @@ func TestSerializeMoreThan8Bools(t *testing.T) {
 		true, true, false, false,                             // byte 2 (partial)
 	}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -155,16 +106,8 @@ func TestSerializeAllTrue(t *testing.T) {
 		bools[i] = true
 	}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -181,16 +124,8 @@ func TestSerializeAllFalse(t *testing.T) {
 	bools := make([]bool, 20)
 	// All false by default
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -209,16 +144,8 @@ func TestSerializeAlternatingPattern(t *testing.T) {
 		bools[i] = i%2 == 0
 	}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -238,16 +165,8 @@ func TestSerializeLargeArray(t *testing.T) {
 		bools[i] = i%3 == 0 // Every third one is true
 	}
 
-	var buf bytes.Buffer
-	err := Serialize(&buf, bools)
-	if err != nil {
-		t.Fatalf("Serialize failed: %v", err)
-	}
-
-	result, err := Deserialize(&buf)
-	if err != nil {
-		t.Fatalf("Deserialize failed: %v", err)
-	}
+	packed := Pack(bools)
+	result := Unpack(packed, len(bools))
 
 	if len(result) != len(bools) {
 		t.Fatalf("Expected length %d, got %d", len(bools), len(result))
@@ -274,16 +193,8 @@ func TestSerializeEdgeCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			err := Serialize(&buf, tc.bools)
-			if err != nil {
-				t.Fatalf("Serialize failed: %v", err)
-			}
-
-			result, err := Deserialize(&buf)
-			if err != nil {
-				t.Fatalf("Deserialize failed: %v", err)
-			}
+			packed := Pack(tc.bools)
+			result := Unpack(packed, len(tc.bools))
 
 			if len(result) != len(tc.bools) {
 				t.Fatalf("Expected length %d, got %d", len(tc.bools), len(result))
@@ -327,16 +238,8 @@ func TestSerializeSpecificPatterns(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			err := Serialize(&buf, tc.bools)
-			if err != nil {
-				t.Fatalf("Serialize failed: %v", err)
-			}
-
-			result, err := Deserialize(&buf)
-			if err != nil {
-				t.Fatalf("Deserialize failed: %v", err)
-			}
+			packed := Pack(tc.bools)
+			result := Unpack(packed, len(tc.bools))
 
 			if len(result) != len(tc.bools) {
 				t.Fatalf("Expected length %d, got %d", len(tc.bools), len(result))
@@ -359,8 +262,7 @@ func BenchmarkSerialize(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		var buf bytes.Buffer
-		Serialize(&buf, bools)
+		Pack(bools)
 	}
 }
 
@@ -370,12 +272,10 @@ func BenchmarkDeserialize(b *testing.B) {
 		bools[i] = i%2 == 0
 	}
 
-	var buf bytes.Buffer
-	Serialize(&buf, bools)
-	data := buf.Bytes()
+	packed := Pack(bools)
 
 	b.ResetTimer()
 	for b.Loop() {
-		Deserialize(bytes.NewReader(data))
+		Unpack(packed, len(bools))
 	}
 }

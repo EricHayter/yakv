@@ -1,56 +1,39 @@
 package bitpack
 
-/* Implement functions for bit packing, i.e. codensing booleans down into bits
+/* Implement functions for bit packing, i.e. condensing booleans down into bits
  * inside of bytes. Mainly for serialization benefits
  */
 
-import (
-	"io"
-	"encoding/binary"
-)
-
-func Serialize(writer io.Writer, bools []bool) error {
+// Pack packs a slice of bools into a slice of bytes (8 bools per byte)
+func Pack(bools []bool) []byte {
 	n := len(bools)
-	err := binary.Write(writer, binary.LittleEndian, uint16(n))
-	if err != nil {
-		return err
-	}
-	for i := 0; i < n; i += 8 {
-		var packedVal uint8
-		for j := 0; j < 8 && i + j < n; j++ {
-			if bools[i + j] {
-				packedVal |= 1 << j
-			}
-		}
-		err = binary.Write(writer, binary.LittleEndian, packedVal)
-		if err != nil {
-			return err
+	// Calculate number of bytes needed: ceil(n / 8)
+	numBytes := (n + 7) / 8
+	packed := make([]byte, numBytes)
+
+	for i := range n {
+		if bools[i] {
+			byteIndex := i / 8
+			bitIndex := i % 8
+			packed[byteIndex] |= 1 << bitIndex
 		}
 	}
 
-	return nil
+	return packed
 }
 
-func Deserialize(reader io.Reader) ([]bool, error) {
-	var numBools uint16
-	if err := binary.Read(reader, binary.LittleEndian, &numBools); err != nil {
-		return nil, err
-	}
-	n := int(numBools)
+// Unpack unpacks a slice of bytes into a slice of bools
+// numBools specifies how many bools to extract (needed because the last byte may be partially filled)
+func Unpack(packed []byte, numBools int) []bool {
+	bools := make([]bool, numBools)
 
-	bools := make([]bool, n)
-	for i := 0; i < int(n); i += 8 {
-		var packedVal uint8
-		if err := binary.Read(reader, binary.LittleEndian, &packedVal); err != nil {
-			return nil, err
-		}
-
-		for j := 0; j < 8 && i + j < n; j++ {
-			if packedVal & (1 << j) != 0 {
-				bools[i + j] = true
-			}
+	for i := range numBools {
+		byteIndex := i / 8
+		bitIndex := i % 8
+		if packed[byteIndex]&(1<<bitIndex) != 0 {
+			bools[i] = true
 		}
 	}
 
-	return bools, nil
+	return bools
 }
