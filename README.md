@@ -41,7 +41,9 @@ make
 
 The main goal of this project is to explore database concepts in a smaller, more
 experimental repo that may or may not make it into my main database project:
-[yadb](https://github.com/EricHayter/yadb).
+[yadb](https://github.com/EricHayter/yadb). Primarily, this project will
+focus on the storage backend of databases (concurrency control, LSM, etc...),
+hence the overly simplistic querying interface.
 
 The original scope was to implement a basic KV store with a log-based storage
 engine, in particular an LSM backend taking inspiration from
@@ -61,7 +63,7 @@ wanted to see what the fuss was all about.
     - [x] Implement skiplist (for memtable)
     - [x] Implement buffer manager
     - [x] Implement disk manager
-    - [ ] Implement storage manager
+    - [x] Implement storage manager
     - [ ] Implement SS tables / merging algos
 - [ ] Implement a write ahead log (WAL) / get eventual durability implemented
 - [ ] Raft consensus algorithm / make it distributed
