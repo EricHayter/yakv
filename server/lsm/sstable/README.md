@@ -4,9 +4,11 @@ YAKV uses an LSM for the storage engine. We've designed our own SSTable file
 format for the LSM implementation. The SSTable files are page-based in order
 to make handling with the buffer manager easier.
 
-![SSTable Format Diagram](../../../docs/sstable_format.drawio)
+## SSTable Format Diagram
 
-For a visual representation of the SSTable structure, see the [diagram](../../../docs/sstable_format.drawio).
+![SSTable Format Diagram](../../../docs/export/sstable_format.png)
+
+For the editable diagram source, see [sstable_format.drawio](../../../docs/sstable_format.drawio).
 
 # Block Types
 
