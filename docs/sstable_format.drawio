@@ -1,0 +1,171 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.3.6 Chrome/140.0.7339.249 Electron/38.8.0 Safari/537.36" version="29.3.6">
+  <diagram name="SSTable File Format" id="sstable-diagram">
+    <mxGraphModel dx="2848" dy="1690" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-49" parent="1" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;fontFamily=Helvetica;" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;&lt;span style=&quot;font-size: 20px;&quot;&gt;The Anatomy of a YAKV SSTable&lt;/span&gt;&lt;/h1&gt;&lt;p&gt;YAKV chooses to use a LSM table as it&#39;s storage format. As such we needed to design a SSTable to persist data.&lt;br&gt;&lt;br&gt;The SSTable is composed of pages that are each 4KB (4096 bytes) to make fetching and writing operations fluid with existing buffer manager architecture.&lt;br&gt;&lt;br&gt;There consists of 4 pages inside of the SSTable:&lt;/p&gt;&lt;p&gt;1. the header block&lt;br&gt;2. the data block&lt;br&gt;3. the (bloom) filter block&lt;br&gt;4. the range block&lt;/p&gt;&lt;p&gt;Below is a rough outline of what an sstable might look like:&lt;/p&gt;" vertex="1">
+          <mxGeometry height="380" width="210" x="30" y="22" as="geometry" />
+        </mxCell>
+        <mxCell id="overview-title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontStyle=1" value="Example SSTable Structure" vertex="1">
+          <mxGeometry height="30" width="300" y="396" as="geometry" />
+        </mxCell>
+        <mxCell id="page0-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=center;" value="Page 0: Header" vertex="1">
+          <mxGeometry height="30" width="260" x="20" y="436" as="geometry" />
+        </mxCell>
+        <mxCell id="page1-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;" value="Page 1: Data Block 0" vertex="1">
+          <mxGeometry height="30" width="260" x="20" y="466" as="geometry" />
+        </mxCell>
+        <mxCell id="page2-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;" value="Page 2: Data Block 1" vertex="1">
+          <mxGeometry height="30" width="260" x="20" y="496" as="geometry" />
+        </mxCell>
+        <mxCell id="page3-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;" value="Page 3: Data Block 2" vertex="1">
+          <mxGeometry height="30" width="260" x="20" y="526" as="geometry" />
+        </mxCell>
+        <mxCell id="ellipsis" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;" value="..." vertex="1">
+          <mxGeometry height="20" width="260" x="20" y="556" as="geometry" />
+        </mxCell>
+        <mxCell id="pageN-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;" value="Page N: Data Block" vertex="1">
+          <mxGeometry height="30" width="260" x="20" y="576" as="geometry" />
+        </mxCell>
+        <mxCell id="bloom-pages-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;" value="Bloom Filter Pages&#xa;(starts at bloomPageId)" vertex="1">
+          <mxGeometry height="40" width="260" x="20" y="606" as="geometry" />
+        </mxCell>
+        <mxCell id="range-pages-box" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;" value="Range Pages&#xa;(starts at rangePageId)" vertex="1">
+          <mxGeometry height="40" width="260" x="20" y="646" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-50" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h2&gt;&lt;font face=&quot;Helvetica&quot;&gt;YAKV SSTable Block Types&lt;/font&gt;&lt;/h2&gt;" vertex="1">
+          <mxGeometry height="30" width="790" x="330" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-6" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h2&gt;&lt;font face=&quot;Helvetica&quot;&gt;Header Block (page 0)&lt;/font&gt;&lt;/h2&gt;" vertex="1">
+          <mxGeometry height="30" width="210" x="355" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;font face=&quot;Helvetica&quot;&gt;numFilters (uint16)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="20" width="250" x="335" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;font face=&quot;Helvetica&quot;&gt;numBits (uint16)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="20" width="250" x="335" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;font face=&quot;Helvetica&quot;&gt;bloomPageId (uint32)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="40" width="250" x="335" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;font face=&quot;Helvetica&quot;&gt;rangePageId (uint32)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="40" width="250" x="335" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;font face=&quot;Helvetica&quot;&gt;free space&lt;/font&gt;" vertex="1">
+          <mxGeometry height="200" width="250" x="335" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-51" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=top;rounded=0;fontFamily=Helvetica;fontSize=10;" value="Stores metadata for the SSTable including bloom filter configuration (numFilters, numBits) and pointers to the first bloom filter page and first range page. Total size: 12 bytes. The rest of the 4KB page remains unused." vertex="1">
+          <mxGeometry height="80" width="240" x="335" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-17" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h2&gt;&lt;font face=&quot;Helvetica&quot;&gt;Data Block&lt;/font&gt;&lt;/h2&gt;" vertex="1">
+          <mxGeometry height="30" width="210" x="675" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;numEntries (uint8)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="20" width="250" x="655" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;data entry 1&lt;/font&gt;" vertex="1">
+          <mxGeometry height="25" width="250" x="655" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-23" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;data entry 2&lt;/font&gt;" vertex="1">
+          <mxGeometry height="25" width="250" x="655" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;...&lt;/font&gt;" vertex="1">
+          <mxGeometry height="220" width="250" x="655" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;data entry numEntries&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="250" x="655" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-32" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h3&gt;&lt;font face=&quot;Helvetica&quot;&gt;Data Entry&lt;/font&gt;&lt;/h3&gt;" vertex="1">
+          <mxGeometry height="30" width="120" x="970" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-28" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;key length (uint32)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="32" width="180" x="940" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-30" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;key (variable)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="32" width="180" x="940" y="142" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-25" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;timestamp (uint64)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="64" width="180" x="940" y="174" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-27" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;deleted (uint8)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="180" x="940" y="238" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-29" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;value length (uint32)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="32" width="180" x="940" y="254" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-31" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;font face=&quot;Helvetica&quot;&gt;value (variable)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="32" width="180" x="940" y="286" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-24" edge="1" parent="1" source="EwI94tb1klGGUtJ_oxIb-28" style="endArrow=classicThin;html=1;rounded=0;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;endFill=1;dashed=1;" target="EwI94tb1klGGUtJ_oxIb-14" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="720" y="240" as="sourcePoint" />
+            <mxPoint x="770" y="190" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-53" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=top;rounded=0;fontFamily=Helvetica;fontSize=10;" value="Stores sorted key-value pairs with metadata (timestamp and deleted flag). Each data block holds ~124 entries. Data is sorted by key to enable binary search and efficient range queries." vertex="1">
+          <mxGeometry height="70" width="240" x="655" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-12" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h2&gt;&lt;font face=&quot;Helvetica&quot;&gt;Bloom Filter Block&lt;/font&gt;&lt;/h2&gt;" vertex="1">
+          <mxGeometry height="30" width="210" x="355" y="526" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;font face=&quot;Helvetica&quot;&gt;filter 0 (bitpacked, 256 bytes)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="25" width="250" x="335" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;font face=&quot;Helvetica&quot;&gt;filter 1 (bitpacked, 256 bytes)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="25" width="250" x="335" y="585" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;font face=&quot;Helvetica&quot;&gt;...&lt;/font&gt;" vertex="1">
+          <mxGeometry height="240" width="250" x="335" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;font face=&quot;Helvetica&quot;&gt;filter n (bitpacked, 256 bytes)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="250" x="335" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-52" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=top;rounded=0;fontFamily=Helvetica;fontSize=10;" value="One bloom filter per data block. Each filter is 2048 bits (256 bytes) with 11 hash functions, providing ~0.35% false positive rate. Filters may span page boundaries. Config stored in header block." vertex="1">
+          <mxGeometry height="80" width="240" x="335" y="890" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-45" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h2&gt;&lt;font face=&quot;Helvetica&quot;&gt;Range Block&lt;/font&gt;&lt;/h2&gt;" vertex="1">
+          <mxGeometry height="30" width="210" x="675" y="526" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-33" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;numRanges (uint8)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="20" width="250" x="655" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-34" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;range 0&lt;/font&gt;" vertex="1">
+          <mxGeometry height="50" width="250" x="655" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-35" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;range 1&lt;/font&gt;" vertex="1">
+          <mxGeometry height="50" width="250" x="655" y="630" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-38" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;...&lt;/font&gt;" vertex="1">
+          <mxGeometry height="140" width="250" x="655" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-37" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;glass=0;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;range n&lt;/font&gt;" vertex="1">
+          <mxGeometry height="60" width="250" x="655" y="820" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-47" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;" value="&lt;h3&gt;&lt;font face=&quot;Helvetica&quot;&gt;Range Entry&lt;/font&gt;&lt;/h3&gt;" vertex="1">
+          <mxGeometry height="30" width="120" x="970" y="526" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-41" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;firstKeyLength (uint16)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="24" width="180" x="940" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-43" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;firstKey (variable)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="24" width="180" x="940" y="584" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-42" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;lastKeyLength (uint16)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="24" width="180" x="940" y="608" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-44" parent="1" style="rounded=0;whiteSpace=wrap;html=1;hachureGap=4;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;font face=&quot;Helvetica&quot;&gt;lastKey (variable)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="24" width="180" x="940" y="632" as="geometry" />
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-46" edge="1" parent="1" source="EwI94tb1klGGUtJ_oxIb-41" style="rounded=0;hachureGap=4;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Architects Daughter;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DArchitects%2BDaughter;endArrow=classicThin;endFill=1;dashed=1;" target="EwI94tb1klGGUtJ_oxIb-34">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="880" y="638" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="EwI94tb1klGGUtJ_oxIb-54" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=top;rounded=0;fontFamily=Helvetica;fontSize=10;" value="One range per data block, mapping index to [firstKey, lastKey] with inclusive bounds. Enables quickly finding which data block might contain a key. Ranges may span page boundaries." vertex="1">
+          <mxGeometry height="70" width="240" x="655" y="890" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
