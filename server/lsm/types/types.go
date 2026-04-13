@@ -11,3 +11,8 @@ type LsmEntry struct {
 
 // Memtable is a type alias for the skiplist-based in-memory table
 type Memtable = skiplist.SkipList[string, LsmEntry]
+
+// NewMemtable creates a new empty memtable
+func NewMemtable() *Memtable {
+	return skiplist.NewSkipList[string, LsmEntry]()
+}
