@@ -172,6 +172,11 @@ func (bufferManager* BufferManager) loadPageLocked(fileId disk_manager.FileId, p
 
 	// Get a frame to evict from the replacer
 	frameId := bufferManager.frameReplacer.Pop()
+
+	// Reserve the page mapping immediately to prevent duplicate loads
+	// This must be done before unlocking bm.mu for I/O
+	bufferManager.filePageMap[key] = frameId
+
 	frame := &bufferManager.frames[frameId]
 
 	// Lock the frame to access its metadata safely
@@ -196,6 +201,8 @@ func (bufferManager* BufferManager) loadPageLocked(fileId disk_manager.FileId, p
 			// Put frame back in replacer since we couldn't flush
 			frame.mut.Unlock()
 			bufferManager.frameReplacer.Push(frameId)
+			// Remove the page mapping we added earlier
+			delete(bufferManager.filePageMap, key)
 			return Page{}, err
 		}
 		frame.dirty = false
@@ -231,14 +238,15 @@ func (bufferManager* BufferManager) loadPageLocked(fileId disk_manager.FileId, p
 		frame.mut.Unlock()
 
 		bufferManager.frameReplacer.Push(frameId)
+		// Remove the page mapping we added earlier
+		delete(bufferManager.filePageMap, key)
 		return Page{}, err
 	}
 
 	// Increment pin count (frame is now pinned by caller)
 	bufferManager.pinPage(frameId)
 
-	// Add new page mapping
-	bufferManager.filePageMap[key] = frameId
+	// Note: page mapping already added at the beginning of this function
 
 	return Page{ bufferManager: bufferManager, frameId: frameId }, nil
 }
