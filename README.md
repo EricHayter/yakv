@@ -4,6 +4,8 @@
 yakv ><>
 ```
 
+![picture of the yakv client being used](docs/client.png)
+
 yakv (yet another key value store) is a key value store with a dead simple
 interface: `put` to store data, `get` to retrieve it, and `delete` to
 remove it. That's it.
