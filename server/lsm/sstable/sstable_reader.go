@@ -6,7 +6,7 @@ import (
 
 	"github.com/EricHayter/yakv/internal/bitpack"
 	"github.com/EricHayter/yakv/internal/bloom_filter"
-	"github.com/EricHayter/yakv/server/lsm"
+	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
@@ -130,7 +130,7 @@ func (sstable *SSTable) checkBloomFilter(blockNum int, key string) (bool, error)
 }
 
 // searchDataBlock performs a linear search through a data block for the key
-func (sstable *SSTable) searchDataBlock(blockNum int, key string) (*lsm.LsmEntry, error) {
+func (sstable *SSTable) searchDataBlock(blockNum int, key string) (*types.LsmEntry, error) {
 	// Data blocks start at page 1 (page 0 is header)
 	// Each data block is one page
 	dataPageId := storage_manager.PageId(1 + blockNum)
@@ -276,45 +276,45 @@ func deserializeRange(r io.Reader) (firstKey, lastKey string, err error) {
 
 // DeserializeKeyValue reads a key-value pair from r.
 // Format: timestamp, deleted, keyLen, valueLen, key, value
-// Returns the key and lsm.LsmEntry, or an error if the data is malformed.
-func DeserializeKeyValue(r io.Reader) (string, lsm.LsmEntry, error) {
-	var entry lsm.LsmEntry
+// Returns the key and types.LsmEntry, or an error if the data is malformed.
+func DeserializeKeyValue(r io.Reader) (string, types.LsmEntry, error) {
+	var entry types.LsmEntry
 
 	// Read timestamp (8 bytes)
 	if err := binary.Read(r, binary.LittleEndian, &entry.Timestamp); err != nil {
-		return "", lsm.LsmEntry{}, err
+		return "", types.LsmEntry{}, err
 	}
 
 	// Read deleted flag (1 byte)
 	var deletedByte byte
 	if err := binary.Read(r, binary.LittleEndian, &deletedByte); err != nil {
-		return "", lsm.LsmEntry{}, err
+		return "", types.LsmEntry{}, err
 	}
 	entry.Deleted = deletedByte != 0
 
 	// Read key length (4 bytes)
 	var keyLen uint32
 	if err := binary.Read(r, binary.LittleEndian, &keyLen); err != nil {
-		return "", lsm.LsmEntry{}, err
+		return "", types.LsmEntry{}, err
 	}
 
 	// Read value length (4 bytes)
 	var valueLen uint32
 	if err := binary.Read(r, binary.LittleEndian, &valueLen); err != nil {
-		return "", lsm.LsmEntry{}, err
+		return "", types.LsmEntry{}, err
 	}
 
 	// Read key bytes
 	keyBytes := make([]byte, keyLen)
 	if _, err := io.ReadFull(r, keyBytes); err != nil {
-		return "", lsm.LsmEntry{}, err
+		return "", types.LsmEntry{}, err
 	}
 	key := string(keyBytes)
 
 	// Read value bytes
 	valueBytes := make([]byte, valueLen)
 	if _, err := io.ReadFull(r, valueBytes); err != nil {
-		return "", lsm.LsmEntry{}, err
+		return "", types.LsmEntry{}, err
 	}
 	entry.Value = string(valueBytes)
 

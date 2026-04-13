@@ -1,8 +1,7 @@
 package sstable
 
 import (
-	"github.com/EricHayter/yakv/internal/skiplist"
-	"github.com/EricHayter/yakv/server/lsm"
+	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
@@ -32,7 +31,7 @@ type SSTable struct {
 }
 
 // CreateNew creates a level 0 sstable (effectively just a direct dump of a memtable)
-func CreateNew(storageManager *storage_manager.StorageManager, memtable *skiplist.SkipList[string, lsm.LsmEntry]) (storage_manager.FileId, error) {
+func CreateNew(storageManager *storage_manager.StorageManager, memtable *types.Memtable) (storage_manager.FileId, error) {
 	writer, err := NewTableWriter(storageManager)
 	if err != nil {
 		return 0, err
@@ -72,7 +71,7 @@ func Open(sm *storage_manager.StorageManager, fileId storage_manager.FileId) (*S
 }
 
 // Get retrieves a value from the SSTable
-func (sstable *SSTable) Get(key string) (*lsm.LsmEntry, error) {
+func (sstable *SSTable) Get(key string) (*types.LsmEntry, error) {
 	// Step 1: Find which data block might contain the key by checking ranges
 	dataBlockNum, found, err := sstable.findBlockForKey(key)
 	if err != nil {

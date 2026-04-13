@@ -6,9 +6,8 @@ import (
 	"encoding/binary"
 
 	"github.com/EricHayter/yakv/internal/bitpack"
-	"github.com/EricHayter/yakv/internal/skiplist"
 	"github.com/EricHayter/yakv/internal/bloom_filter"
-	"github.com/EricHayter/yakv/server/lsm"
+	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
@@ -206,7 +205,7 @@ func NewTableWriter(sm *storage_manager.StorageManager) (*lsmTableWriter, error)
 	}, nil
 }
 
-func (w *lsmTableWriter) Write(memtable *skiplist.SkipList[string, lsm.LsmEntry]) (storage_manager.FileId, error) {
+func (w *lsmTableWriter) Write(memtable *types.Memtable) (storage_manager.FileId, error) {
 	// Write data blocks (starts at page 1)
 	firstKeys, err := w.writeDataBlocks(memtable.Items())
 	if err != nil {
@@ -234,7 +233,7 @@ func (w *lsmTableWriter) Write(memtable *skiplist.SkipList[string, lsm.LsmEntry]
 	return w.fileId, nil
 }
 
-func (w *lsmTableWriter) writeDataBlocks(it iter.Seq2[string, lsm.LsmEntry]) (firstKeys []string, err error) {
+func (w *lsmTableWriter) writeDataBlocks(it iter.Seq2[string, types.LsmEntry]) (firstKeys []string, err error) {
 	// Initialize empty slice - we'll append first key of each block as we create them
 	firstKeys = make([]string, 0)
 	tuplesWritten := uint8(0)
@@ -322,7 +321,7 @@ func (w *lsmTableWriter) writeDataBlocks(it iter.Seq2[string, lsm.LsmEntry]) (fi
 	return firstKeys, nil
 }
 
-func (w *lsmTableWriter) writeBloomFilters(firstKeys []string, it iter.Seq2[string, lsm.LsmEntry]) (storage_manager.PageId, error) {
+func (w *lsmTableWriter) writeBloomFilters(firstKeys []string, it iter.Seq2[string, types.LsmEntry]) (storage_manager.PageId, error) {
 	pageId, err := w.storageManager.AddPage(w.fileId)
 	if err != nil {
 		return 0, err
@@ -418,7 +417,7 @@ func (w *lsmTableWriter) writeBloomFilters(firstKeys []string, it iter.Seq2[stri
 	return firstPageId, nil
 }
 
-func (w *lsmTableWriter) writeRangeBlocks(firstKeys []string, it iter.Seq2[string, lsm.LsmEntry]) (storage_manager.PageId, error) {
+func (w *lsmTableWriter) writeRangeBlocks(firstKeys []string, it iter.Seq2[string, types.LsmEntry]) (storage_manager.PageId, error) {
 	tuplesWritten := uint8(0)
 	pageId, err := w.storageManager.AddPage(w.fileId)
 	if err != nil {
@@ -588,7 +587,7 @@ func serializeRange(w io.Writer, firstKey, lastKey string) error {
 
 // SerializeKeyValue writes a key-value pair to w in binary format.
 // Format: timestamp, deleted, keyLen, valueLen, key, value
-func SerializeKeyValue(w io.Writer, key string, entry lsm.LsmEntry) error {
+func SerializeKeyValue(w io.Writer, key string, entry types.LsmEntry) error {
 	// Write timestamp (8 bytes, little-endian)
 	if err := binary.Write(w, binary.LittleEndian, entry.Timestamp); err != nil {
 		return err
