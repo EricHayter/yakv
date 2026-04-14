@@ -2,7 +2,7 @@ package lsm
 
 import (
 	"sync"
-
+	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
@@ -121,20 +121,22 @@ func (lsm *LogStructuredMergeTree) Get(key string) (string, bool) {
 		}
 	}
 
-	// TODO: Search SSTables in reverse order (newest to oldest)
-	// for level := 0; level < len(lsm.sstables); level++ {
-	//     for i := len(lsm.sstables[level]) - 1; i >= 0; i-- {
-	//         fileId := lsm.sstables[level][i]
-	//         sstable := openSSTable(fileId)
-	//         entry, err := sstable.Get(key)
-	//         if entry != nil {
-	//             if entry.Deleted {
-	//                 return "", false
-	//             }
-	//             return entry.Value, true
-	//         }
-	//     }
-	// }
+	for level := 0; level < len(lsm.sstables); level++ {
+	    for i := len(lsm.sstables[level]) - 1; i >= 0; i-- {
+	        fileId := lsm.sstables[level][i]
+	        sstable, err := sstable.Open(lsm.storageManager, fileId)
+			if err != nil {
+				// TODO print something here soon.
+			}
+	        entry, err := sstable.Get(key)
+	        if entry != nil {
+	            if entry.Deleted {
+	                return "", false
+	            }
+	            return entry.Value, true
+	        }
+	    }
+	}
 
 	return "", false
 }
