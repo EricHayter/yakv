@@ -24,7 +24,6 @@ package lsm
  */
 
 import (
-	"sync"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/storage_manager"
@@ -35,13 +34,11 @@ type flushCallback = func (storage_manager.FileId, error)
 type flushQueue struct {
 	cb flushCallback
 	storageManager  *storage_manager.StorageManager
-	mut sync.RWMutex
 	head *flushQueueElement
 	tail *flushQueueElement
 }
 
 type flushQueueElement struct {
-	mut sync.RWMutex
 	memtable *types.Memtable
 	next, prev *flushQueueElement
 }
@@ -54,11 +51,6 @@ func newFlushQueue(storageManager *storage_manager.StorageManager, cb flushCallb
 	}
 }
 
-func (e *flushQueueElement) Next() *flushQueueElement { return e.next }
-func (e *flushQueueElement) Lock() { e.mut.Lock() }
-func (e *flushQueueElement) Unlock() { e.mut.Unlock() }
-func (e *flushQueueElement) Data() *types.Memtable { return e.memtable }
-
 func (fq *flushQueue) PushBack(memtable *types.Memtable) {
 	e := &flushQueueElement{
 		memtable: memtable,
@@ -66,39 +58,21 @@ func (fq *flushQueue) PushBack(memtable *types.Memtable) {
 		prev: nil,
 	}
 
-	fq.mut.Lock()
 	if fq.tail != nil {
-		fq.tail.Lock()
 		fq.tail.prev = e
-		fq.tail.Unlock()
 	} else {
-		// First element - also becomes head
 		fq.head = e
 	}
 	fq.tail = e
-	fq.mut.Unlock()
 
 	go func() {
 		// don't think I need a lock for reads of the memtable.
 		// since those are read only.
 		// pointers will update though so we can't access those.
-		fileId, err := sstable.CreateNew(fq.storageManager, e.Data())
+		fileId, err := sstable.CreateNew(fq.storageManager, e.memtable)
 		if err != nil {
 			fq.cb(0, err)
 			return
-		}
-
-		// Remove self from the list
-		// Lock in traversal order: prev -> self -> next
-		if e.prev != nil {
-			e.prev.Lock()
-			defer e.prev.Unlock()
-		}
-		e.Lock()
-		defer e.Unlock()
-		if e.next != nil {
-			e.next.Lock()
-			defer e.next.Unlock()
 		}
 
 		// Update links
@@ -106,34 +80,16 @@ func (fq *flushQueue) PushBack(memtable *types.Memtable) {
 			e.prev.next = e.next
 		} else {
 			// This was head, update queue
-			fq.mut.Lock()
 			fq.head = e.next
-			fq.mut.Unlock()
 		}
 
 		if e.next != nil {
 			e.next.prev = e.prev
 		} else {
 			// This was tail, update queue
-			fq.mut.Lock()
 			fq.tail = e.prev
-			fq.mut.Unlock()
 		}
 
 		fq.cb(fileId, nil)
 	}()
-}
-
-// Returns the tail end of the qeue in a readlock state
-func (fq *flushQueue) Tail() *flushQueueElement {
-	fq.mut.RLock()
-	defer fq.mut.RUnlock()
-	return fq.tail
-}
-
-// Returns the head end of the qeue in a readlock state
-func (fq *flushQueue) Head() *flushQueueElement {
-	fq.mut.RLock()
-	defer fq.mut.RUnlock()
-	return fq.head
 }
