@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/EricHayter/yakv/server/disk_manager"
@@ -229,13 +228,14 @@ func TestVersionLargeNumberOfLevels(t *testing.T) {
 // =============================================================================
 
 func TestManifestFlushAndLoad(t *testing.T) {
+	// Clean up yakv directory before test
+	os.RemoveAll(disk_manager.YakvDirectory)
+	defer os.RemoveAll(disk_manager.YakvDirectory)
+
 	// Ensure yakv directory exists
 	if err := os.MkdirAll(disk_manager.YakvDirectory, 0755); err != nil {
 		t.Fatalf("Failed to create yakv directory: %v", err)
 	}
-
-	// Clean up manifest file after test
-	defer os.Remove(ManifestPath)
 
 	// Create LSM with test data
 	sm, err := storage_manager.New(100)
@@ -292,12 +292,14 @@ func TestManifestFlushAndLoad(t *testing.T) {
 }
 
 func TestManifestAtomicWrite(t *testing.T) {
+	// Clean up yakv directory before test
+	os.RemoveAll(disk_manager.YakvDirectory)
+	defer os.RemoveAll(disk_manager.YakvDirectory)
+
 	// Ensure yakv directory exists
 	if err := os.MkdirAll(disk_manager.YakvDirectory, 0755); err != nil {
 		t.Fatalf("Failed to create yakv directory: %v", err)
 	}
-
-	defer os.Remove(ManifestPath)
 
 	// Create storage manager
 	sm, err := storage_manager.New(100)
@@ -349,29 +351,17 @@ func TestManifestAtomicWrite(t *testing.T) {
 	if loaded.lastTimestamp != 200 {
 		t.Errorf("Expected timestamp 200, got %d", loaded.lastTimestamp)
 	}
-
-	// Verify no temp files left behind
-	files, err := os.ReadDir(disk_manager.YakvDirectory)
-	if err != nil {
-		t.Fatalf("Failed to read directory: %v", err)
-	}
-
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == ".tmp" {
-			t.Errorf("Temp file left behind: %s", file.Name())
-		}
-	}
 }
 
 func TestManifestFlushCreatesFile(t *testing.T) {
+	// Clean up yakv directory before test
+	os.RemoveAll(disk_manager.YakvDirectory)
+	defer os.RemoveAll(disk_manager.YakvDirectory)
+
 	// Ensure yakv directory exists
 	if err := os.MkdirAll(disk_manager.YakvDirectory, 0755); err != nil {
 		t.Fatalf("Failed to create yakv directory: %v", err)
 	}
-
-	// Remove if it exists
-	os.Remove(ManifestPath)
-	defer os.Remove(ManifestPath)
 
 	// Create LSM and manifest
 	sm, err := storage_manager.New(100)

@@ -2,15 +2,20 @@ package lsm
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/EricHayter/yakv/server/disk_manager"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
-func setupTestLSM(t *testing.T) *LogStructuredMergeTree {
+func setupTestLSM(t *testing.T) (*LogStructuredMergeTree, func()) {
 	t.Helper()
+
+	// Clean up yakv directory before test
+	os.RemoveAll(disk_manager.YakvDirectory)
 
 	sm, err := storage_manager.New(100)
 	if err != nil {
@@ -22,12 +27,17 @@ func setupTestLSM(t *testing.T) *LogStructuredMergeTree {
 		t.Fatalf("Failed to create LSM: %v", err)
 	}
 
-	return lsm
+	cleanup := func() {
+		lsm.Close()
+		os.RemoveAll(disk_manager.YakvDirectory)
+	}
+
+	return lsm, cleanup
 }
 
 func TestBasicPutGet(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	// Put a value
 	lsm.Put("key1", "value1")
@@ -43,8 +53,8 @@ func TestBasicPutGet(t *testing.T) {
 }
 
 func TestGetNonExistent(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	_, found := lsm.Get("nonexistent")
 	if found {
@@ -53,8 +63,8 @@ func TestGetNonExistent(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	// Put a value
 	lsm.Put("key1", "value1")
@@ -76,8 +86,8 @@ func TestDelete(t *testing.T) {
 }
 
 func TestUpdateValue(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	// Put initial value
 	lsm.Put("key1", "value1")
@@ -96,8 +106,8 @@ func TestUpdateValue(t *testing.T) {
 }
 
 func TestConcurrentWrites(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	const numGoroutines = 10
 	const writesPerGoroutine = 100
@@ -126,8 +136,8 @@ func TestConcurrentWrites(t *testing.T) {
 }
 
 func TestConcurrentReadsWrites(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	// Pre-populate some data
 	for i := range 100 {
@@ -162,8 +172,8 @@ func TestConcurrentReadsWrites(t *testing.T) {
 }
 
 func TestDeletedFlagRespected(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	// Put, delete, then verify deleted flag works
 	lsm.Put("key1", "value1")
@@ -177,8 +187,8 @@ func TestDeletedFlagRespected(t *testing.T) {
 }
 
 func TestMemtableSizeTracking(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	initialSize := atomic.LoadUint64(&lsm.memtableSize)
 
@@ -203,8 +213,8 @@ func TestMemtableSizeTracking(t *testing.T) {
 }
 
 func TestTimestampIncreases(t *testing.T) {
-	lsm := setupTestLSM(t)
-	defer lsm.storageManager.Close()
+	lsm, cleanup := setupTestLSM(t)
+	defer cleanup()
 
 	lsm.Put("key1", "value1")
 	ts1 := atomic.LoadUint64(&lsm.lastTimestamp)

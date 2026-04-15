@@ -3,14 +3,19 @@ package lsm
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"testing"
 
+	"github.com/EricHayter/yakv/server/disk_manager"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
 // setupBenchLSM creates a new LSM tree for benchmarking
 func setupBenchLSM(b *testing.B) *LogStructuredMergeTree {
 	b.Helper()
+
+	// Clean up yakv directory before benchmark
+	os.RemoveAll(disk_manager.YakvDirectory)
 
 	// Create storage manager with reasonable buffer capacity
 	sm, err := storage_manager.New(1000)
@@ -29,9 +34,8 @@ func setupBenchLSM(b *testing.B) *LogStructuredMergeTree {
 // cleanupBenchLSM cleans up after benchmarks
 func cleanupBenchLSM(b *testing.B, lsm *LogStructuredMergeTree) {
 	b.Helper()
-	if lsm.storageManager != nil {
-		lsm.storageManager.Close()
-	}
+	lsm.Close()
+	os.RemoveAll(disk_manager.YakvDirectory)
 }
 
 // =============================================================================
