@@ -1,14 +1,16 @@
 package lsm
 
 import (
-	"os"
-	"io"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
-	"time"
-	"encoding/binary"
+	"os"
 	"path/filepath"
+	"sync/atomic"
+	"time"
+
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
@@ -50,8 +52,9 @@ const (
 var ManifestPath = filepath.Join(YakvDirectory, ManifestFileName)
 
 type manifest struct {
-	syncing        bool
+	syncing        atomic.Bool
 	flushSignaler  <-chan struct{}
+	done           chan struct{} // Signals when flusher has stopped so that Close will wait for flusher to complete
 	storageManager *storage_manager.StorageManager
 	lsm            *LogStructuredMergeTree
 }
@@ -179,7 +182,8 @@ func (m *manifest) flushLsmMetadata() error {
 }
 
 func (m *manifest) versionFlusher() {
-	for m.syncing {
+	defer close(m.done) // Signal when we're done
+	for m.syncing.Load() {
 		select {
 		case <-m.flushSignaler:
 			// Explicit signal from LSM (e.g., sstables changed)
@@ -218,14 +222,21 @@ func loadVersion() (*version, error) {
 // newManifest creates a new manifest for the given LSM and starts the background flusher.
 func newManifest(lsm *LogStructuredMergeTree, storageManager *storage_manager.StorageManager, flushSignaler <-chan struct{}) *manifest {
 	m := &manifest{
-		syncing:        true,
 		flushSignaler:  flushSignaler,
+		done:           make(chan struct{}),
 		storageManager: storageManager,
 		lsm:            lsm,
 	}
+	m.syncing.Store(true)
 
 	// Start background flusher
 	go m.versionFlusher()
 
 	return m
+}
+
+// Close stops the background flusher and waits for it to finish
+func (m *manifest) Close() {
+	m.syncing.Store(false)
+	<-m.done // Wait for flusher to stop
 }
