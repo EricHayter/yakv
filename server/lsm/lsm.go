@@ -13,12 +13,17 @@ const (
 
 type LogStructuredMergeTree struct {
 	mu sync.RWMutex // Protects memtable, sstables, memtableSize, and lastTimestamp
+
 	memtableSize uint64
 	memtable     *types.Memtable
+	flushQueue   flushQueue
 	sstables     [][]storage_manager.FileId
-	storageManager *storage_manager.StorageManager
+
 	lastTimestamp uint64
-	flushQueue flushQueue
+
+	storageManager *storage_manager.StorageManager
+	manifest       *manifest
+	flushSignaler  chan<- struct{}
 }
 
 func (lsm *LogStructuredMergeTree) onMemtableFlush(fileId storage_manager.FileId, err error) {
@@ -29,20 +34,53 @@ func (lsm *LogStructuredMergeTree) onMemtableFlush(fileId storage_manager.FileId
 
 	// Need lock to safely modify sstables slice
 	lsm.mu.Lock()
-	defer lsm.mu.Unlock()
 	lsm.sstables[0] = append(lsm.sstables[0], fileId)
+	lsm.mu.Unlock()
+
+	// Signal manifest to flush (non-blocking)
+	select {
+	case lsm.flushSignaler <- struct{}{}:
+	default:
+		// Channel already has a pending signal, skip
+	}
 }
 
-func New(storageManager *storage_manager.StorageManager) *LogStructuredMergeTree {
+func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTree, error) {
+	// Try to load existing version from disk
+	v, err := loadVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize LSM with loaded data or defaults
+	var lastTimestamp uint64
+	var sstables [][]storage_manager.FileId
+
+	if v != nil {
+		// Restore from persisted state
+		lastTimestamp = v.lastTimestamp
+		sstables = v.sstables
+	} else {
+		// Fresh start
+		lastTimestamp = 0
+		sstables = make([][]storage_manager.FileId, 1)
+	}
+
+	// Create flush signaler channel for manifest
+	flushSignaler := make(chan struct{}, 1)
+
 	lsm := &LogStructuredMergeTree{
-		memtable: types.NewMemtable(),
-		sstables: make([][]storage_manager.FileId, 1),
+		memtable:       types.NewMemtable(),
+		sstables:       sstables,
 		storageManager: storageManager,
-		lastTimestamp: 0,
+		lastTimestamp:  lastTimestamp,
+		flushSignaler:  flushSignaler,
 	}
 
 	lsm.flushQueue = *newFlushQueue(lsm.storageManager, lsm.onMemtableFlush)
-	return lsm
+	lsm.manifest = newManifest(lsm, storageManager, flushSignaler)
+
+	return lsm, nil
 }
 
 func (lsm *LogStructuredMergeTree) Put(key, value string) {
@@ -139,4 +177,22 @@ func (lsm *LogStructuredMergeTree) Get(key string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// getVersion creates a snapshot of the current LSM state for persistence.
+// This method is called by the manifest to get the current state to flush.
+func (lsm *LogStructuredMergeTree) getVersion() version {
+	lsm.mu.RLock()
+	defer lsm.mu.RUnlock()
+
+	// Deep copy sstables to avoid data races
+	sstablesCopy := make([][]storage_manager.FileId, len(lsm.sstables))
+	for i := range lsm.sstables {
+		sstablesCopy[i] = append([]storage_manager.FileId{}, lsm.sstables[i]...)
+	}
+
+	return version{
+		lastTimestamp: lsm.lastTimestamp,
+		sstables:      sstablesCopy,
+	}
 }

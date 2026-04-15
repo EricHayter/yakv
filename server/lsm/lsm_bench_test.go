@@ -18,7 +18,11 @@ func setupBenchLSM(b *testing.B) *LogStructuredMergeTree {
 		b.Fatalf("Failed to create storage manager: %v", err)
 	}
 
-	lsm := New(sm)
+	lsm, err := New(sm)
+	if err != nil {
+		b.Fatalf("Failed to create LSM: %v", err)
+	}
+
 	return lsm
 }
 

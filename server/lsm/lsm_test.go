@@ -16,7 +16,12 @@ func setupTestLSM(t *testing.T) *LogStructuredMergeTree {
 		t.Fatalf("Failed to create storage manager: %v", err)
 	}
 
-	return New(sm)
+	lsm, err := New(sm)
+	if err != nil {
+		t.Fatalf("Failed to create LSM: %v", err)
+	}
+
+	return lsm
 }
 
 func TestBasicPutGet(t *testing.T) {

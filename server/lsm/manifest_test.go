@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/EricHayter/yakv/server/disk_manager"
+	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
 // Helper function to create test version
-func createTestVersion(timestamp uint64, levels int, filesPerLevel int) *Version {
+func createTestVersion(timestamp uint64, levels int, filesPerLevel int) *version {
 	sstables := make([][]disk_manager.FileId, levels)
 	fileId := disk_manager.FileId(1)
 
@@ -23,7 +24,7 @@ func createTestVersion(timestamp uint64, levels int, filesPerLevel int) *Version
 		}
 	}
 
-	return &Version{
+	return &version{
 		lastTimestamp: timestamp,
 		sstables:      sstables,
 	}
@@ -55,12 +56,12 @@ func TestVersionSerializeDeserializeRoundTrip(t *testing.T) {
 
 			// Serialize
 			var buf bytes.Buffer
-			if err := original.Serialize(&buf); err != nil {
+			if err := original.serialize(&buf); err != nil {
 				t.Fatalf("Serialize failed: %v", err)
 			}
 
 			// Deserialize
-			deserialized, err := DeserializeVersion(&buf)
+			deserialized, err := deserializeVersion(&buf)
 			if err != nil {
 				t.Fatalf("Deserialize failed: %v", err)
 			}
@@ -98,7 +99,7 @@ func TestVersionSerializeDeserializeRoundTrip(t *testing.T) {
 
 func TestVersionDeserializeEmptyData(t *testing.T) {
 	var buf bytes.Buffer
-	_, err := DeserializeVersion(&buf)
+	_, err := deserializeVersion(&buf)
 	if err == nil {
 		t.Error("Expected error when deserializing empty data")
 	}
@@ -108,7 +109,7 @@ func TestVersionDeserializeTruncatedData(t *testing.T) {
 	// Create a valid version
 	original := createTestVersion(100, 2, 3)
 	var buf bytes.Buffer
-	original.Serialize(&buf)
+	original.serialize(&buf)
 
 	// Truncate the data
 	data := buf.Bytes()
@@ -125,7 +126,7 @@ func TestVersionDeserializeTruncatedData(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			truncated := bytes.NewReader(data[:tt.length])
-			_, err := DeserializeVersion(truncated)
+			_, err := deserializeVersion(truncated)
 			if err == nil {
 				t.Error("Expected error when deserializing truncated data")
 			}
@@ -139,7 +140,7 @@ func TestVersionSerializeWriteError(t *testing.T) {
 	// Use a writer that always fails
 	errWriter := &failWriter{}
 
-	err := version.Serialize(errWriter)
+	err := version.serialize(errWriter)
 	if err == nil {
 		t.Error("Expected error when writing to failing writer")
 	}
@@ -150,17 +151,17 @@ func TestVersionSerializeWriteError(t *testing.T) {
 // =============================================================================
 
 func TestVersionEmptyLevels(t *testing.T) {
-	version := &Version{
+	version := &version{
 		lastTimestamp: 42,
 		sstables:      [][]disk_manager.FileId{},
 	}
 
 	var buf bytes.Buffer
-	if err := version.Serialize(&buf); err != nil {
+	if err := version.serialize(&buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
 
-	deserialized, err := DeserializeVersion(&buf)
+	deserialized, err := deserializeVersion(&buf)
 	if err != nil {
 		t.Fatalf("Deserialize failed: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestVersionEmptyLevels(t *testing.T) {
 }
 
 func TestVersionEmptyLevel(t *testing.T) {
-	version := &Version{
+	version := &version{
 		lastTimestamp: 100,
 		sstables: [][]disk_manager.FileId{
 			{1, 2, 3},
@@ -185,11 +186,11 @@ func TestVersionEmptyLevel(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := version.Serialize(&buf); err != nil {
+	if err := version.serialize(&buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
 
-	deserialized, err := DeserializeVersion(&buf)
+	deserialized, err := deserializeVersion(&buf)
 	if err != nil {
 		t.Fatalf("Deserialize failed: %v", err)
 	}
@@ -208,11 +209,11 @@ func TestVersionLargeNumberOfLevels(t *testing.T) {
 	version := createTestVersion(1000, numLevels, 2)
 
 	var buf bytes.Buffer
-	if err := version.Serialize(&buf); err != nil {
+	if err := version.serialize(&buf); err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
 
-	deserialized, err := DeserializeVersion(&buf)
+	deserialized, err := deserializeVersion(&buf)
 	if err != nil {
 		t.Fatalf("Deserialize failed: %v", err)
 	}
@@ -236,14 +237,29 @@ func TestManifestFlushAndLoad(t *testing.T) {
 	// Clean up manifest file after test
 	defer os.Remove(ManifestPath)
 
-	// Create manifest with test data
-	manifest := &Manifest{
-		version: *createTestVersion(500, 3, 2),
+	// Create LSM with test data
+	sm, err := storage_manager.New(100)
+	if err != nil {
+		t.Fatalf("Failed to create storage manager: %v", err)
+	}
+	defer sm.Close()
+
+	testVersion := createTestVersion(500, 3, 2)
+	lsm := &LogStructuredMergeTree{
+		lastTimestamp:  testVersion.lastTimestamp,
+		sstables:       testVersion.sstables,
+		storageManager: sm,
+	}
+
+	// Create manifest
+	m := &manifest{
+		lsm:            lsm,
+		storageManager: sm,
 	}
 
 	// Flush to disk
-	if err := manifest.FlushLsmMetadata(); err != nil {
-		t.Fatalf("FlushLsmMetadata failed: %v", err)
+	if err := m.flushLsmMetadata(); err != nil {
+		t.Fatalf("flushLsmMetadata failed: %v", err)
 	}
 
 	// Verify file exists
@@ -258,20 +274,20 @@ func TestManifestFlushAndLoad(t *testing.T) {
 	}
 	defer f.Close()
 
-	loaded, err := DeserializeVersion(f)
+	loaded, err := deserializeVersion(f)
 	if err != nil {
 		t.Fatalf("Failed to deserialize manifest: %v", err)
 	}
 
 	// Verify data matches
-	if loaded.lastTimestamp != manifest.version.lastTimestamp {
+	if loaded.lastTimestamp != testVersion.lastTimestamp {
 		t.Errorf("Timestamp mismatch: got %d, want %d",
-			loaded.lastTimestamp, manifest.version.lastTimestamp)
+			loaded.lastTimestamp, testVersion.lastTimestamp)
 	}
 
-	if len(loaded.sstables) != len(manifest.version.sstables) {
+	if len(loaded.sstables) != len(testVersion.sstables) {
 		t.Errorf("Level count mismatch: got %d, want %d",
-			len(loaded.sstables), len(manifest.version.sstables))
+			len(loaded.sstables), len(testVersion.sstables))
 	}
 }
 
@@ -283,19 +299,38 @@ func TestManifestAtomicWrite(t *testing.T) {
 
 	defer os.Remove(ManifestPath)
 
-	// Create initial manifest
-	manifest1 := &Manifest{
-		version: *createTestVersion(100, 1, 1),
+	// Create storage manager
+	sm, err := storage_manager.New(100)
+	if err != nil {
+		t.Fatalf("Failed to create storage manager: %v", err)
 	}
-	if err := manifest1.FlushLsmMetadata(); err != nil {
+	defer sm.Close()
+
+	// Create LSM and manifest with initial data
+	testVersion1 := createTestVersion(100, 1, 1)
+	lsm := &LogStructuredMergeTree{
+		lastTimestamp:  testVersion1.lastTimestamp,
+		sstables:       testVersion1.sstables,
+		storageManager: sm,
+	}
+	m := &manifest{
+		lsm:            lsm,
+		storageManager: sm,
+	}
+
+	if err := m.flushLsmMetadata(); err != nil {
 		t.Fatalf("First flush failed: %v", err)
 	}
 
-	// Overwrite with new manifest
-	manifest2 := &Manifest{
-		version: *createTestVersion(200, 2, 2),
-	}
-	if err := manifest2.FlushLsmMetadata(); err != nil {
+	// Update LSM data
+	testVersion2 := createTestVersion(200, 2, 2)
+	lsm.mu.Lock()
+	lsm.lastTimestamp = testVersion2.lastTimestamp
+	lsm.sstables = testVersion2.sstables
+	lsm.mu.Unlock()
+
+	// Flush again
+	if err := m.flushLsmMetadata(); err != nil {
 		t.Fatalf("Second flush failed: %v", err)
 	}
 
@@ -306,7 +341,7 @@ func TestManifestAtomicWrite(t *testing.T) {
 	}
 	defer f.Close()
 
-	loaded, err := DeserializeVersion(f)
+	loaded, err := deserializeVersion(f)
 	if err != nil {
 		t.Fatalf("Failed to deserialize: %v", err)
 	}
@@ -338,12 +373,26 @@ func TestManifestFlushCreatesFile(t *testing.T) {
 	os.Remove(ManifestPath)
 	defer os.Remove(ManifestPath)
 
-	manifest := &Manifest{
-		version: *createTestVersion(42, 1, 1),
+	// Create LSM and manifest
+	sm, err := storage_manager.New(100)
+	if err != nil {
+		t.Fatalf("Failed to create storage manager: %v", err)
+	}
+	defer sm.Close()
+
+	testVersion := createTestVersion(42, 1, 1)
+	lsm := &LogStructuredMergeTree{
+		lastTimestamp:  testVersion.lastTimestamp,
+		sstables:       testVersion.sstables,
+		storageManager: sm,
+	}
+	m := &manifest{
+		lsm:            lsm,
+		storageManager: sm,
 	}
 
-	if err := manifest.FlushLsmMetadata(); err != nil {
-		t.Fatalf("FlushLsmMetadata failed: %v", err)
+	if err := m.flushLsmMetadata(); err != nil {
+		t.Fatalf("flushLsmMetadata failed: %v", err)
 	}
 
 	// Verify file was created

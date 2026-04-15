@@ -4,6 +4,8 @@ import (
 	"os"
 	"io"
 	"errors"
+	"log/slog"
+	"time"
 	"encoding/binary"
 	"path/filepath"
 	"github.com/EricHayter/yakv/server/storage_manager"
@@ -46,18 +48,20 @@ const (
 
 var ManifestPath = filepath.Join(YakvDirectory, ManifestFileName)
 
-type Manifest struct {
-   storageManager 	*storage_manager.StorageManager
-   version 		Version
+type manifest struct {
+	syncing        bool
+	flushSignaler  <-chan struct{}
+	storageManager *storage_manager.StorageManager
+	lsm            *LogStructuredMergeTree
 }
 
-type Version struct {
+type version struct {
 	lastTimestamp uint64
-	sstables [][]storage_manager.FileId
+	sstables      [][]storage_manager.FileId
 }
 
-// Serialize writes the version to a writer
-func (v *Version) Serialize(w io.Writer) error {
+// serialize writes the version to a writer
+func (v *version) serialize(w io.Writer) error {
 	// Write timestamp
 	if err := binary.Write(w, binary.LittleEndian, v.lastTimestamp); err != nil {
 		return err
@@ -87,9 +91,9 @@ func (v *Version) Serialize(w io.Writer) error {
 	return nil
 }
 
-// DeserializeVersion creates a Version from a reader
-func DeserializeVersion(r io.Reader) (*Version, error) {
-	v := &Version{}
+// deserializeVersion creates a version from a reader
+func deserializeVersion(r io.Reader) (*version, error) {
+	v := &version{}
 
 	// Read timestamp
 	if err := binary.Read(r, binary.LittleEndian, &v.lastTimestamp); err != nil {
@@ -126,13 +130,16 @@ func DeserializeVersion(r io.Reader) (*Version, error) {
 	return v, nil
 }
 
-func (manifest *Manifest) FlushLsmMetadata() error {
+func (m *manifest) flushLsmMetadata() error {
 	/* Create a temporary file in the yakv directory, then serialize the
 	 * version data. Once the file is written, an atomic rename is done such
 	 * that the old data is only replaced IF we successfully write the new
 	 * version data.
 	 */
 	manifestPath := ManifestPath
+
+	// Get current version snapshot from LSM
+	v := m.lsm.getVersion()
 
 	// Create temp file in yakv directory (same filesystem for atomic rename)
 	f, err := os.CreateTemp(YakvDirectory, ManifestFileName+"-*.tmp")
@@ -149,7 +156,7 @@ func (manifest *Manifest) FlushLsmMetadata() error {
 		}
 	}()
 
-	if err := manifest.version.Serialize(f); err != nil {
+	if err := v.serialize(f); err != nil {
 		return err
 	}
 
@@ -168,4 +175,52 @@ func (manifest *Manifest) FlushLsmMetadata() error {
 	}
 
 	return nil
+}
+
+func (m *manifest) versionFlusher() {
+	for m.syncing {
+		select {
+		case <-m.flushSignaler:
+			// Explicit signal from LSM (e.g., sstables changed)
+			err := m.flushLsmMetadata()
+			if err != nil {
+				slog.Error(err.Error())
+			}
+		case <-time.After(50 * time.Millisecond):
+			// Periodic flush to catch timestamp updates
+			err := m.flushLsmMetadata()
+			if err != nil {
+				slog.Error(err.Error())
+			}
+		}
+	}
+}
+
+// loadVersion reads the version from disk. Returns nil if file doesn't exist.
+func loadVersion() (*version, error) {
+	f, err := os.Open(ManifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No manifest file, fresh start
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	return deserializeVersion(f)
+}
+
+// newManifest creates a new manifest for the given LSM and starts the background flusher.
+func newManifest(lsm *LogStructuredMergeTree, storageManager *storage_manager.StorageManager, flushSignaler <-chan struct{}) *manifest {
+	m := &manifest{
+		syncing:        true,
+		flushSignaler:  flushSignaler,
+		storageManager: storageManager,
+		lsm:            lsm,
+	}
+
+	// Start background flusher
+	go m.versionFlusher()
+
+	return m
 }
