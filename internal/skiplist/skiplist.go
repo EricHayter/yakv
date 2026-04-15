@@ -21,12 +21,14 @@ package skiplist
 import (
 	"cmp"
 	"iter"
+	"sync"
 	"math/rand"
 )
 
 const maxLevel = 32
 
 type SkipList[K cmp.Ordered, V any] struct {
+	mu 				   sync.RWMutex
 	promoteProbability float32
 	head               *skipListNode[K, V] // head of list (sentinel node)
 	size               int
@@ -47,13 +49,38 @@ func (list *SkipList[K, V]) randomLevel() int {
 }
 
 func (list *SkipList[K, V]) Size() int {
+	list.mu.RLock()
+	defer list.mu.RUnlock()
 	return list.size
+}
+
+// Lock acquires a write lock on the skiplist
+func (list *SkipList[K, V]) Lock() {
+	list.mu.Lock()
+}
+
+// Unlock releases a write lock on the skiplist
+func (list *SkipList[K, V]) Unlock() {
+	list.mu.Unlock()
+}
+
+// RLock acquires a read lock on the skiplist
+func (list *SkipList[K, V]) RLock() {
+	list.mu.RLock()
+}
+
+// RUnlock releases a read lock on the skiplist
+func (list *SkipList[K, V]) RUnlock() {
+	list.mu.RUnlock()
 }
 
 // Insert adds or updates a key-value pair in the skiplist.
 // If the key already exists, its value is updated.
 // There are NO duplicate keys in the skiplist.
 func (list *SkipList[K, V]) Insert(key K, value V) {
+	list.mu.Lock()
+	defer list.mu.Unlock()
+
 	insertLevel := list.randomLevel()
 
 	// Track predecessor nodes at each level
@@ -91,6 +118,9 @@ func (list *SkipList[K, V]) Insert(key K, value V) {
 }
 
 func (list *SkipList[K, V]) Delete(key K) bool {
+	list.mu.Lock()
+	defer list.mu.Unlock()
+
 	update := make([]*skipListNode[K, V], maxLevel)
 	p := list.head
 
@@ -118,6 +148,9 @@ func (list *SkipList[K, V]) Delete(key K) bool {
 }
 
 func (list *SkipList[K, V]) Get(key K) (V, bool) {
+	list.mu.RLock()
+	defer list.mu.RUnlock()
+
 	p := list.head
 
 	// Search from top level down
@@ -137,6 +170,17 @@ func (list *SkipList[K, V]) Get(key K) (V, bool) {
 	return zero, false
 }
 
+// Items returns an iterator over all key-value pairs in the skiplist.
+// The caller must hold a read lock (via RLock/RUnlock) for the duration of iteration
+// to ensure thread safety.
+//
+// Example usage:
+//
+//	list.RLock()
+//	defer list.RUnlock()
+//	for key, value := range list.Items() {
+//	    // process key, value
+//	}
 func (list *SkipList[K, V]) Items() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		// Start from first real node (skip sentinel)

@@ -2,6 +2,7 @@ package lsm
 
 import (
 	"sync"
+	"sync/atomic"
 	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
@@ -12,14 +13,15 @@ const (
 )
 
 type LogStructuredMergeTree struct {
-	mu sync.RWMutex // Protects memtable, sstables, memtableSize, and lastTimestamp
+	mu sync.RWMutex // RLock for reads/writes, Lock for memtable flush and sstable modifications
 
-	memtableSize uint64
+	// Accessed atomically - must be 64-bit aligned (keep at top of struct)
+	memtableSize  uint64
+	lastTimestamp uint64
+
 	memtable     *types.Memtable
 	flushQueue   flushQueue
 	sstables     [][]storage_manager.FileId
-
-	lastTimestamp uint64
 
 	storageManager *storage_manager.StorageManager
 	manifest       *manifest
@@ -84,23 +86,32 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 }
 
 func (lsm *LogStructuredMergeTree) Put(key, value string) {
-	lsm.mu.Lock()
-	defer lsm.mu.Unlock()
+	// Hot path: use read lock since memtable is thread-safe
+	lsm.mu.RLock()
 
-	lsm.lastTimestamp++
+	timestamp := atomic.AddUint64(&lsm.lastTimestamp, 1)
 	newEntry := types.LsmEntry{
-		Timestamp: lsm.lastTimestamp,
-		Deleted: false,
-		Value: value,
+		Timestamp: timestamp,
+		Deleted:   false,
+		Value:     value,
 	}
 	lsm.memtable.Insert(key, newEntry)
-	lsm.memtableSize += uint64(len(key) + len(value) + 8 + 1)
+	newSize := atomic.AddUint64(&lsm.memtableSize, uint64(len(key)+len(value)+8+1))
 
-	// If memtable is full, flush it
-	if lsm.memtableSize >= memtableSizeThreshold {
-		lsm.flushQueue.PushBack(lsm.memtable)
-		lsm.memtable = types.NewMemtable()
-		lsm.memtableSize = 0
+	// Check if we need to flush
+	if newSize >= memtableSizeThreshold {
+		lsm.mu.RUnlock()
+		// Acquire write lock for flush
+		lsm.mu.Lock()
+		// Double-check - another thread might have flushed already
+		if atomic.LoadUint64(&lsm.memtableSize) >= memtableSizeThreshold {
+			lsm.flushQueue.PushBack(lsm.memtable)
+			lsm.memtable = types.NewMemtable()
+			atomic.StoreUint64(&lsm.memtableSize, 0)
+		}
+		lsm.mu.Unlock()
+	} else {
+		lsm.mu.RUnlock()
 	}
 }
 
@@ -112,24 +123,33 @@ func (lsm *LogStructuredMergeTree) Delete(key string) {
 	 * because of this, we need to explcitly create a new log that states the
 	 * key has been deleted/removed.
 	 */
-	lsm.mu.Lock()
-	defer lsm.mu.Unlock()
+	// Hot path: use read lock since memtable is thread-safe
+	lsm.mu.RLock()
 
-	lsm.lastTimestamp++
+	timestamp := atomic.AddUint64(&lsm.lastTimestamp, 1)
 	newEntry := types.LsmEntry{
-		Timestamp: lsm.lastTimestamp,
-		Deleted: true,
-		Value: "",
+		Timestamp: timestamp,
+		Deleted:   true,
+		Value:     "",
 	}
 	lsm.memtable.Insert(key, newEntry)
 	// Tombstones also count toward memtable size
-	lsm.memtableSize += uint64(len(key) + 8 + 1)
+	newSize := atomic.AddUint64(&lsm.memtableSize, uint64(len(key)+8+1))
 
 	// Check if we need to flush
-	if lsm.memtableSize >= memtableSizeThreshold {
-		lsm.flushQueue.PushBack(lsm.memtable)
-		lsm.memtable = types.NewMemtable()
-		lsm.memtableSize = 0
+	if newSize >= memtableSizeThreshold {
+		lsm.mu.RUnlock()
+		// Acquire write lock for flush
+		lsm.mu.Lock()
+		// Double-check - another thread might have flushed already
+		if atomic.LoadUint64(&lsm.memtableSize) >= memtableSizeThreshold {
+			lsm.flushQueue.PushBack(lsm.memtable)
+			lsm.memtable = types.NewMemtable()
+			atomic.StoreUint64(&lsm.memtableSize, 0)
+		}
+		lsm.mu.Unlock()
+	} else {
+		lsm.mu.RUnlock()
 	}
 }
 
@@ -185,6 +205,8 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 	lsm.mu.RLock()
 	defer lsm.mu.RUnlock()
 
+	timestamp := atomic.LoadUint64(&lsm.lastTimestamp)
+
 	// Deep copy sstables to avoid data races
 	sstablesCopy := make([][]storage_manager.FileId, len(lsm.sstables))
 	for i := range lsm.sstables {
@@ -192,7 +214,7 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 	}
 
 	return version{
-		lastTimestamp: lsm.lastTimestamp,
+		lastTimestamp: timestamp,
 		sstables:      sstablesCopy,
 	}
 }

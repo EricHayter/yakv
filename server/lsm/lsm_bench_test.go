@@ -362,3 +362,94 @@ func BenchmarkOLTPWorkload(b *testing.B) {
 		}
 	}
 }
+
+// =============================================================================
+// Concurrent Write Benchmarks
+// =============================================================================
+
+func benchmarkConcurrentWrites(b *testing.B, numGoroutines int) {
+	lsm := setupBenchLSM(b)
+	defer cleanupBenchLSM(b, lsm)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			key := fmt.Sprintf("key%010d", i)
+			value := fmt.Sprintf("value%010d", i)
+			lsm.Put(key, value)
+			i++
+		}
+	})
+}
+
+func BenchmarkConcurrentWrites_1Thread(b *testing.B) {
+	b.SetParallelism(1)
+	benchmarkConcurrentWrites(b, 1)
+}
+
+func BenchmarkConcurrentWrites_2Threads(b *testing.B) {
+	b.SetParallelism(2)
+	benchmarkConcurrentWrites(b, 2)
+}
+
+func BenchmarkConcurrentWrites_4Threads(b *testing.B) {
+	b.SetParallelism(4)
+	benchmarkConcurrentWrites(b, 4)
+}
+
+func BenchmarkConcurrentWrites_8Threads(b *testing.B) {
+	b.SetParallelism(8)
+	benchmarkConcurrentWrites(b, 8)
+}
+
+// =============================================================================
+// Concurrent Mixed Workload Benchmarks
+// =============================================================================
+
+func benchmarkConcurrentMixed(b *testing.B, readPct int) {
+	lsm := setupBenchLSM(b)
+	defer cleanupBenchLSM(b, lsm)
+
+	// Pre-populate with data
+	for i := 0; i < 10000; i++ {
+		key := fmt.Sprintf("key%010d", i)
+		value := fmt.Sprintf("value%010d", i)
+		lsm.Put(key, value)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		rng := rand.New(rand.NewSource(42))
+		i := 0
+		for pb.Next() {
+			if rng.Intn(100) < readPct {
+				// Read
+				keyNum := rng.Intn(10000)
+				key := fmt.Sprintf("key%010d", keyNum)
+				lsm.Get(key)
+			} else {
+				// Write
+				key := fmt.Sprintf("key%010d", i)
+				value := fmt.Sprintf("value%010d", i)
+				lsm.Put(key, value)
+				i++
+			}
+		}
+	})
+}
+
+func BenchmarkConcurrentMixed_90Read_10Write_4Threads(b *testing.B) {
+	b.SetParallelism(4)
+	benchmarkConcurrentMixed(b, 90)
+}
+
+func BenchmarkConcurrentMixed_50Read_50Write_4Threads(b *testing.B) {
+	b.SetParallelism(4)
+	benchmarkConcurrentMixed(b, 50)
+}
+
+func BenchmarkConcurrentMixed_10Read_90Write_4Threads(b *testing.B) {
+	b.SetParallelism(4)
+	benchmarkConcurrentMixed(b, 10)
+}

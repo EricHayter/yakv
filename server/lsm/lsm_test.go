@@ -3,6 +3,7 @@ package lsm
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/EricHayter/yakv/server/storage_manager"
@@ -179,13 +180,14 @@ func TestMemtableSizeTracking(t *testing.T) {
 	lsm := setupTestLSM(t)
 	defer lsm.storageManager.Close()
 
-	initialSize := lsm.memtableSize
+	initialSize := atomic.LoadUint64(&lsm.memtableSize)
 
 	// Add an entry
 	lsm.Put("key", "value")
 
 	// Size should have increased
-	if lsm.memtableSize <= initialSize {
+	currentSize := atomic.LoadUint64(&lsm.memtableSize)
+	if currentSize <= initialSize {
 		t.Error("Memtable size should increase after Put")
 	}
 
@@ -194,8 +196,9 @@ func TestMemtableSizeTracking(t *testing.T) {
 
 	// Size should increase even for deletes (tombstones take space)
 	expectedMinSize := initialSize + uint64(len("key")+len("value")+8+1) + uint64(len("key2")+8+1)
-	if lsm.memtableSize < expectedMinSize {
-		t.Errorf("Memtable size should be at least %d, got %d", expectedMinSize, lsm.memtableSize)
+	finalSize := atomic.LoadUint64(&lsm.memtableSize)
+	if finalSize < expectedMinSize {
+		t.Errorf("Memtable size should be at least %d, got %d", expectedMinSize, finalSize)
 	}
 }
 
@@ -204,17 +207,17 @@ func TestTimestampIncreases(t *testing.T) {
 	defer lsm.storageManager.Close()
 
 	lsm.Put("key1", "value1")
-	ts1 := lsm.lastTimestamp
+	ts1 := atomic.LoadUint64(&lsm.lastTimestamp)
 
 	lsm.Put("key2", "value2")
-	ts2 := lsm.lastTimestamp
+	ts2 := atomic.LoadUint64(&lsm.lastTimestamp)
 
 	if ts2 <= ts1 {
 		t.Error("Timestamp should increase with each operation")
 	}
 
 	lsm.Delete("key3")
-	ts3 := lsm.lastTimestamp
+	ts3 := atomic.LoadUint64(&lsm.lastTimestamp)
 
 	if ts3 <= ts2 {
 		t.Error("Timestamp should increase for deletes too")
