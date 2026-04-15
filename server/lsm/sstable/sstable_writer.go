@@ -1,9 +1,10 @@
 package sstable
 
 import (
+	"encoding/binary"
+	"fmt"
 	"io"
 	"iter"
-	"encoding/binary"
 
 	"github.com/EricHayter/yakv/internal/bitpack"
 	"github.com/EricHayter/yakv/internal/bloom_filter"
@@ -209,25 +210,25 @@ func (w *lsmTableWriter) Write(memtable *types.Memtable) (storage_manager.FileId
 	// Write data blocks (starts at page 1)
 	firstKeys, err := w.writeDataBlocks(memtable.Items())
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to write data blocks: %w", err)
 	}
 
 	// Write bloom filters
 	w.bloomPageId, err = w.writeBloomFilters(firstKeys, memtable.Items())
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to write bloom filters: %w", err)
 	}
 
 	// Write ranges
 	w.rangePageId, err = w.writeRangeBlocks(firstKeys, memtable.Items())
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to write range blocks: %w", err)
 	}
 
 	// Write header (at page 0)
 	err = w.writeHeaderBlock()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to write header block: %w", err)
 	}
 
 	return w.fileId, nil

@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 
 	"google.golang.org/grpc"
@@ -43,12 +43,12 @@ func main() {
 	flag.Parse()
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		slog.Error("failed to listen", slog.String("error", err.Error()))
 	}
 	s := grpc.NewServer()
 	pb.RegisterYakvServerServer(s, &server{})
-	log.Printf("server listening at %v", lis.Addr())
+	slog.Info("server listening", slog.Any("address", lis.Addr()))
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		slog.Error("failed to serve", slog.String("error", err.Error()))
 	}
 }

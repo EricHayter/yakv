@@ -1,6 +1,7 @@
 package lsm
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"github.com/EricHayter/yakv/server/lsm/sstable"
@@ -51,7 +52,7 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 	// Try to load existing version from disk
 	v, err := loadVersion()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load LSM manifest: %w", err)
 	}
 
 	// Initialize LSM with loaded data or defaults

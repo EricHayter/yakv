@@ -4,6 +4,7 @@ import (
 	"os"
 	"io"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 	"encoding/binary"
@@ -64,26 +65,26 @@ type version struct {
 func (v *version) serialize(w io.Writer) error {
 	// Write timestamp
 	if err := binary.Write(w, binary.LittleEndian, v.lastTimestamp); err != nil {
-		return err
+		return fmt.Errorf("failed to write timestamp: %w", err)
 	}
 
 	// Write number of levels
 	numLevels := uint16(len(v.sstables))
 	if err := binary.Write(w, binary.LittleEndian, numLevels); err != nil {
-		return err
+		return fmt.Errorf("failed to write number of levels: %w", err)
 	}
 
 	// Write each level
-	for _, level := range v.sstables {
+	for i, level := range v.sstables {
 		numTables := uint16(len(level))
 		if err := binary.Write(w, binary.LittleEndian, numTables); err != nil {
-			return err
+			return fmt.Errorf("failed to write table count for level %d: %w", i, err)
 		}
 
 		// Write file IDs
-		for _, fileId := range level {
+		for j, fileId := range level {
 			if err := binary.Write(w, binary.LittleEndian, uint16(fileId)); err != nil {
-				return err
+				return fmt.Errorf("failed to write file ID %d in level %d: %w", j, i, err)
 			}
 		}
 	}
@@ -97,13 +98,13 @@ func deserializeVersion(r io.Reader) (*version, error) {
 
 	// Read timestamp
 	if err := binary.Read(r, binary.LittleEndian, &v.lastTimestamp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read timestamp: %w", err)
 	}
 
 	// Read number of levels
 	var numLevels uint16
 	if err := binary.Read(r, binary.LittleEndian, &numLevels); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read number of levels: %w", err)
 	}
 
 	v.sstables = make([][]storage_manager.FileId, numLevels)
@@ -112,7 +113,7 @@ func deserializeVersion(r io.Reader) (*version, error) {
 	for i := range numLevels {
 		var numTables uint16
 		if err := binary.Read(r, binary.LittleEndian, &numTables); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to read table count for level %d: %w", i, err)
 		}
 
 		v.sstables[i] = make([]storage_manager.FileId, numTables)
@@ -121,7 +122,7 @@ func deserializeVersion(r io.Reader) (*version, error) {
 		for j := range numTables {
 			var fileId uint16
 			if err := binary.Read(r, binary.LittleEndian, &fileId); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read file ID %d in level %d: %w", j, i, err)
 			}
 			v.sstables[i][j] = storage_manager.FileId(fileId)
 		}
@@ -144,7 +145,7 @@ func (m *manifest) flushLsmMetadata() error {
 	// Create temp file in yakv directory (same filesystem for atomic rename)
 	f, err := os.CreateTemp(YakvDirectory, ManifestFileName+"-*.tmp")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create temp manifest file: %w", err)
 	}
 	tempPath := f.Name()
 
@@ -157,21 +158,21 @@ func (m *manifest) flushLsmMetadata() error {
 	}()
 
 	if err := v.serialize(f); err != nil {
-		return err
+		return fmt.Errorf("failed to serialize manifest: %w", err)
 	}
 
 	if err := f.Sync(); err != nil {
-		return err
+		return fmt.Errorf("failed to sync manifest file: %w", err)
 	}
 
 	if err := f.Close(); err != nil {
-		return err
+		return fmt.Errorf("failed to close manifest file: %w", err)
 	}
 	f = nil // Prevent defer from closing again
 
 	if err := os.Rename(tempPath, manifestPath); err != nil {
 		os.Remove(tempPath)
-		return err
+		return fmt.Errorf("failed to atomically rename manifest: %w", err)
 	}
 
 	return nil
@@ -203,11 +204,15 @@ func loadVersion() (*version, error) {
 		if os.IsNotExist(err) {
 			return nil, nil // No manifest file, fresh start
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to open manifest file: %w", err)
 	}
 	defer f.Close()
 
-	return deserializeVersion(f)
+	v, err := deserializeVersion(f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize manifest: %w", err)
+	}
+	return v, nil
 }
 
 // newManifest creates a new manifest for the given LSM and starts the background flusher.

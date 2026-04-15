@@ -24,6 +24,7 @@ package lsm
  */
 
 import (
+	"fmt"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/storage_manager"
@@ -71,7 +72,7 @@ func (fq *flushQueue) PushBack(memtable *types.Memtable) {
 		// pointers will update though so we can't access those.
 		fileId, err := sstable.CreateNew(fq.storageManager, e.memtable)
 		if err != nil {
-			fq.cb(0, err)
+			fq.cb(0, fmt.Errorf("failed to create sstable from memtable: %w", err))
 			return
 		}
 

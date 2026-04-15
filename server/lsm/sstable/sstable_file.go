@@ -1,6 +1,7 @@
 package sstable
 
 import (
+	"fmt"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
@@ -34,9 +35,13 @@ type SSTable struct {
 func CreateNew(storageManager *storage_manager.StorageManager, memtable *types.Memtable) (storage_manager.FileId, error) {
 	writer, err := NewTableWriter(storageManager)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to create sstable writer: %w", err)
 	}
-	return writer.Write(memtable)
+	fileId, err := writer.Write(memtable)
+	if err != nil {
+		return 0, fmt.Errorf("failed to write memtable to sstable: %w", err)
+	}
+	return fileId, nil
 }
 
 // Open opens an existing SSTable by reading its header
@@ -45,13 +50,14 @@ func Open(sm *storage_manager.StorageManager, fileId storage_manager.FileId) (*S
 	pageId := storage_manager.PageId(0)
 	page, err := sm.GetPage(fileId, pageId)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get header page for sstable %d: %w", fileId, err)
 	}
 
 	r := page.NewReader()
 	header, err := deserializeHeader(r)
 	if err != nil {
-		return nil, err
+		page.Close()
+		return nil, fmt.Errorf("failed to deserialize sstable header: %w", err)
 	}
 	page.Close()
 
@@ -75,7 +81,7 @@ func (sstable *SSTable) Get(key string) (*types.LsmEntry, error) {
 	// Step 1: Find which data block might contain the key by checking ranges
 	dataBlockNum, found, err := sstable.findBlockForKey(key)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to find block for key %q: %w", key, err)
 	}
 	if !found {
 		// Key is outside all ranges
@@ -85,7 +91,7 @@ func (sstable *SSTable) Get(key string) (*types.LsmEntry, error) {
 	// Step 2: Check the bloom filter for that block
 	mightBePresent, err := sstable.checkBloomFilter(dataBlockNum, key)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to check bloom filter for key %q in block %d: %w", key, dataBlockNum, err)
 	}
 	if !mightBePresent {
 		// Definitely not present
@@ -93,5 +99,9 @@ func (sstable *SSTable) Get(key string) (*types.LsmEntry, error) {
 	}
 
 	// Step 3: Actually search the data block
-	return sstable.searchDataBlock(dataBlockNum, key)
+	entry, err := sstable.searchDataBlock(dataBlockNum, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search data block %d for key %q: %w", dataBlockNum, key, err)
+	}
+	return entry, nil
 }
