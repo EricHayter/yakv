@@ -1,10 +1,12 @@
 package disk_manager
 
 import (
-	"fmt"
-	"os"
 	"errors"
+	"fmt"
 	"math/rand"
+	"os"
+	"sync"
+
 	"github.com/EricHayter/yakv/internal/lru"
 )
 
@@ -22,6 +24,7 @@ type PageData [PageSize]byte
 // (PageId is uint16, limiting pages per file to 65536)
 
 type DiskManager struct {
+	mu              sync.RWMutex // Protects fileHandleMap and fileReplacer
 	fileHandleMap   map[FileId]*os.File
 	fileReplacer    *lru.Replacer[FileId]
 }
@@ -47,7 +50,7 @@ func (diskManager *DiskManager) CreateFileWithId(fileId FileId) error {
 		return fmt.Errorf("Error checking file existence for fileId=%d: %v", fileId, err)
 	}
 	if exists {
-		return fmt.Errorf("File already exists: fileId=%d", fileId)
+		return os.ErrExist
 	}
 
 	// Create and open the file with read-write permissions
@@ -62,6 +65,10 @@ func (diskManager *DiskManager) CreateFileWithId(fileId FileId) error {
 		file.Close()
 		return fmt.Errorf("Failed to truncate file: fileId=%d, error=%v", fileId, err)
 	}
+
+	// Acquire lock to modify cache
+	diskManager.mu.Lock()
+	defer diskManager.mu.Unlock()
 
 	// Check if we need to evict a file handle
 	if len(diskManager.fileHandleMap) >= MaxFileHandles {
@@ -139,16 +146,32 @@ func (diskManager *DiskManager) WritePage(fileId FileId, pageId PageId, data *Pa
 }
 
 func (diskManager *DiskManager) loadFile(fileId FileId) (*os.File, error) {
+	// Fast path: check cache with read lock
+	diskManager.mu.RLock()
 	file, pres := diskManager.fileHandleMap[fileId]
 	if pres {
-		diskManager.fileReplacer.Get(fileId)  // Mark as recently used
+		diskManager.fileReplacer.Get(fileId) // Mark as recently used
+		diskManager.mu.RUnlock()
 		return file, nil
 	}
+	diskManager.mu.RUnlock()
 
-	// Open the file with read-write permissions
-	file, err := os.OpenFile(getFilePath(fileId), os.O_RDWR, 0644)
+	// Slow path: open file and add to cache
+	// Open outside of lock to avoid holding lock during I/O
+	newFile, err := os.OpenFile(getFilePath(fileId), os.O_RDWR, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to open file: fileId=%d, error=%v", fileId, err)
+	}
+
+	// Acquire write lock to modify cache
+	diskManager.mu.Lock()
+	defer diskManager.mu.Unlock()
+
+	// Double-check: another goroutine might have opened it
+	if existingFile, exists := diskManager.fileHandleMap[fileId]; exists {
+		newFile.Close() // Close the file we just opened
+		diskManager.fileReplacer.Get(fileId)
+		return existingFile, nil
 	}
 
 	// Check if we need to evict a file handle
@@ -161,8 +184,8 @@ func (diskManager *DiskManager) loadFile(fileId FileId) (*os.File, error) {
 
 	// Add to replacer and file handle map
 	diskManager.fileReplacer.Push(fileId)
-	diskManager.fileHandleMap[fileId] = file
-	return file, nil
+	diskManager.fileHandleMap[fileId] = newFile
+	return newFile, nil
 }
 
 // AddPage adds a single page to the file and returns the new page's ID.
@@ -202,6 +225,9 @@ func (diskManager *DiskManager) AddPages(fileId FileId, count uint16) (PageId, e
 
 // Close closes all open file handles
 func (diskManager *DiskManager) Close() error {
+	diskManager.mu.Lock()
+	defer diskManager.mu.Unlock()
+
 	for _, file := range diskManager.fileHandleMap {
 		file.Close()
 	}
