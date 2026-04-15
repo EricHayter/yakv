@@ -219,3 +219,17 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 		sstables:      sstablesCopy,
 	}
 }
+
+// Close stops background goroutines and closes the storage manager
+func (lsm *LogStructuredMergeTree) Close() error {
+	// Stop manifest flusher
+	if lsm.manifest != nil {
+		lsm.manifest.Close()
+	}
+
+	// Close storage manager
+	if lsm.storageManager != nil {
+		return lsm.storageManager.Close()
+	}
+	return nil
+}
