@@ -42,66 +42,67 @@ The SSTable contains 4 different types of blocks:
    getting false positives.
 */
 
-/* Some math here to figure out rough parameters for this
- *
- * pages have 4096 bytes, and key value pairs have 17 + m + n bytes in data
- * with n and m being the lengths of the key and value respectively.
- *
- * assuming 8 bytes for key and value, say the user is using ids that are
- * 64 bit ints and keys are also some 8 byte number, the we can assume
- * entries are 33 bytes long.
- *
- * 4096 / 33 is roughly 124 entries per block/page
- *
- * We are generating bloom filters per page.
- *
- * from here I'm going to use the facts listed in this wikipedia article
- * https://en.wikipedia.org/wiki/Bloom_filter
- * to pick out some parameters that are close to optimal for this
- * hypothetical (but hopefully close to reality) setup.
+/*
+Some math here to figure out rough parameters for this
+*
+* pages have 4096 bytes, and key value pairs have 17 + m + n bytes in data
+* with n and m being the lengths of the key and value respectively.
+*
+* assuming 8 bytes for key and value, say the user is using ids that are
+* 64 bit ints and keys are also some 8 byte number, the we can assume
+* entries are 33 bytes long.
+*
+* 4096 / 33 is roughly 124 entries per block/page
+*
+* We are generating bloom filters per page.
+*
+* from here I'm going to use the facts listed in this wikipedia article
+* https://en.wikipedia.org/wiki/Bloom_filter
+* to pick out some parameters that are close to optimal for this
+* hypothetical (but hopefully close to reality) setup.
 
- * We figure out roughly the size of bloom filters we want:
- * to determine the number of bits we need we can use the following formula
- * give a desired false positive rate:
- *
- * 		m = -2.08ln(E)n
- *
- * where m is the number of bits, E is the desired false positive rate,
- * and n is the number of elements in the filter.
- *
- * so with a our 124 entries we have the following bit counts per false
- * positive rate:
- *
- * 1%: around 1187 bits (around 148 bytes)
- * 5%: around 772 bits (around 97 bytes)
- *
- * Or more practically since I have the constraint that the size of our
- * bloom filter must be a power of 2-bytes long, we can determine the
- * expected false positive rate with m bits, asuuming ideal hashing.
- *
- * 256 bytes: 0.35% false positive
- * 128 bytes: 1.9% false positive
- *
- * Given these numbers it would seem that going with a bloom filter of size
- * 256 bytes seems best giving a ratio of 16:1 of data blocks to filter
- * blocks which I belive is reasonable, and a relatively low false potiive
- * rate.
- *
- * also, it's almost certain that a false positive rate of 0.35% will not be
- * achieved in real scenarios, so being slightly conservative with
- * acceptable false positive rates here seems like a good choice.
- *
- * optinal number of hashes is a lot more simple :) (thank goodness).
- * optimal number of hashes is achieved by m/n*ln(2) where m is the number
- * of bits, and n is the number of entries.
- *
- * Thus, assuming the number of entries per page is matching closely to
- * our prediction, of 124 entries, the optimal number of hash functions is
- * 11.
- */
+* We figure out roughly the size of bloom filters we want:
+* to determine the number of bits we need we can use the following formula
+* give a desired false positive rate:
+*
+* 		m = -2.08ln(E)n
+*
+* where m is the number of bits, E is the desired false positive rate,
+* and n is the number of elements in the filter.
+*
+* so with a our 124 entries we have the following bit counts per false
+* positive rate:
+*
+* 1%: around 1187 bits (around 148 bytes)
+* 5%: around 772 bits (around 97 bytes)
+*
+* Or more practically since I have the constraint that the size of our
+* bloom filter must be a power of 2-bytes long, we can determine the
+* expected false positive rate with m bits, asuuming ideal hashing.
+*
+* 256 bytes: 0.35% false positive
+* 128 bytes: 1.9% false positive
+*
+* Given these numbers it would seem that going with a bloom filter of size
+* 256 bytes seems best giving a ratio of 16:1 of data blocks to filter
+* blocks which I belive is reasonable, and a relatively low false potiive
+* rate.
+*
+* also, it's almost certain that a false positive rate of 0.35% will not be
+* achieved in real scenarios, so being slightly conservative with
+* acceptable false positive rates here seems like a good choice.
+*
+* optinal number of hashes is a lot more simple :) (thank goodness).
+* optimal number of hashes is achieved by m/n*ln(2) where m is the number
+* of bits, and n is the number of entries.
+*
+* Thus, assuming the number of entries per page is matching closely to
+* our prediction, of 124 entries, the optimal number of hash functions is
+* 11.
+*/
 const (
-   numFilters = 11
-   numBits = 2048
+	numFilters = 11
+	numBits    = 2048
 )
 
 type sstableHeader struct {
@@ -179,12 +180,12 @@ type lsmTableWriter struct {
 	fileId         storage_manager.FileId
 
 	// Bloom filter configuration
-	numBits        uint
-	numFilters     uint
+	numBits    uint
+	numFilters uint
 
 	// Track page IDs as we write (header=0, data=1, then these)
-	bloomPageId    storage_manager.PageId
-	rangePageId    storage_manager.PageId
+	bloomPageId storage_manager.PageId
+	rangePageId storage_manager.PageId
 
 	// Global metadata
 	numTuples      uint32
@@ -345,13 +346,13 @@ func (w *lsmTableWriter) writeBloomFilters(firstKeys []string, it iter.Seq2[stri
 		// This is the last block so everything here can be added to the
 		// bloom filter without checking that we have entered into the next
 		// block's data.
-		if dataBlockNum == numDataBlocks - 1 {
+		if dataBlockNum == numDataBlocks-1 {
 			bf.Insert([]byte(key))
-		// This is still data in the current block
-		} else if key < firstKeys[dataBlockNum + 1] {
+			// This is still data in the current block
+		} else if key < firstKeys[dataBlockNum+1] {
 			bf.Insert([]byte(key))
-		// we've reached the next block's data, so we must flush the data
-		// to disk
+			// we've reached the next block's data, so we must flush the data
+			// to disk
 		} else {
 			// attempt to write the bloom filters data to the thing
 			_, err := pageWriter.Write(bitpack.Pack(bf.Bits))
@@ -439,7 +440,7 @@ func (w *lsmTableWriter) writeRangeBlocks(firstKeys []string, it iter.Seq2[strin
 	numDataBlocks := len(firstKeys)
 	for key := range it {
 		// still in current block's range
-		if dataBlockNum == numDataBlocks - 1 || key < firstKeys[dataBlockNum + 1] {
+		if dataBlockNum == numDataBlocks-1 || key < firstKeys[dataBlockNum+1] {
 			previousKey = key
 			continue
 		}

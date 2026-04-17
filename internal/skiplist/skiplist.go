@@ -21,14 +21,14 @@ package skiplist
 import (
 	"cmp"
 	"iter"
-	"sync"
 	"math/rand"
+	"sync"
 )
 
 const maxLevel = 32
 
 type SkipList[K cmp.Ordered, V any] struct {
-	mu 				   sync.RWMutex
+	mu                 sync.RWMutex
 	promoteProbability float32
 	head               *skipListNode[K, V] // head of list (sentinel node)
 	size               int

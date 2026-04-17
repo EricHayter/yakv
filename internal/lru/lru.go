@@ -8,10 +8,10 @@ import (
 // Replacer is a thread-safe LRU replacer that tracks items by key.
 // It helps determine which item should be evicted based on least-recently-used policy.
 type Replacer[K comparable] struct {
-	mu       sync.Mutex
-	cond     *sync.Cond
-	items    map[K]*list.Element
-	lru      *list.List
+	mu    sync.Mutex
+	cond  *sync.Cond
+	items map[K]*list.Element
+	lru   *list.List
 }
 
 type entry[K comparable] struct {
@@ -21,8 +21,8 @@ type entry[K comparable] struct {
 // New creates a new LRU replacer
 func New[K comparable]() *Replacer[K] {
 	r := &Replacer[K]{
-		items:    make(map[K]*list.Element),
-		lru:      list.New(),
+		items: make(map[K]*list.Element),
+		lru:   list.New(),
 	}
 	r.cond = sync.NewCond(&r.mu)
 	return r

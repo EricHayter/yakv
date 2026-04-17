@@ -2,11 +2,11 @@ package lsm
 
 import (
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
+	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -20,9 +20,9 @@ type LogStructuredMergeTree struct {
 	memtableSize  uint64
 	lastTimestamp uint64
 
-	memtable     *types.Memtable
-	flushQueue   flushQueue
-	sstables     [][]storage_manager.FileId
+	memtable   *types.Memtable
+	flushQueue flushQueue
+	sstables   [][]storage_manager.FileId
 
 	storageManager *storage_manager.StorageManager
 	manifest       *manifest
@@ -181,20 +181,20 @@ func (lsm *LogStructuredMergeTree) Get(key string) (string, bool) {
 	}
 
 	for level := 0; level < len(lsm.sstables); level++ {
-	    for i := len(lsm.sstables[level]) - 1; i >= 0; i-- {
-	        fileId := lsm.sstables[level][i]
-	        sstable, err := sstable.Open(lsm.storageManager, fileId)
+		for i := len(lsm.sstables[level]) - 1; i >= 0; i-- {
+			fileId := lsm.sstables[level][i]
+			sstable, err := sstable.Open(lsm.storageManager, fileId)
 			if err != nil {
 				// TODO print something here soon.
 			}
-	        entry, err := sstable.Get(key)
-	        if entry != nil {
-	            if entry.Deleted {
-	                return "", false
-	            }
-	            return entry.Value, true
-	        }
-	    }
+			entry, err := sstable.Get(key)
+			if entry != nil {
+				if entry.Deleted {
+					return "", false
+				}
+				return entry.Value, true
+			}
+		}
 	}
 
 	return "", false

@@ -49,10 +49,10 @@ const ManifestFileName = "manifest"
 var ManifestPath = filepath.Join(common.YakvDirectory, ManifestFileName)
 
 type manifest struct {
-	flushSignaler  <-chan struct{} // Signals when flusher has stopped so that Close will wait for flusher to complete
-	quit           chan struct{}   // Signals: "please stop"
-	done           chan struct{}   // Signals: "I've stopped"
-	lsm            *LogStructuredMergeTree
+	flushSignaler <-chan struct{} // Signals when flusher has stopped so that Close will wait for flusher to complete
+	quit          chan struct{}   // Signals: "please stop"
+	done          chan struct{}   // Signals: "I've stopped"
+	lsm           *LogStructuredMergeTree
 }
 
 type version struct {
@@ -220,10 +220,10 @@ func loadVersion() (*version, error) {
 // newManifest creates a new manifest for the given LSM and starts the background flusher.
 func newManifest(lsm *LogStructuredMergeTree, flushSignaler <-chan struct{}) *manifest {
 	m := &manifest{
-		flushSignaler:  flushSignaler,
-		quit:           make(chan struct{}),
-		done:           make(chan struct{}),
-		lsm:            lsm,
+		flushSignaler: flushSignaler,
+		quit:          make(chan struct{}),
+		done:          make(chan struct{}),
+		lsm:           lsm,
 	}
 
 	// Start background flusher

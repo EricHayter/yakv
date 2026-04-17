@@ -1,9 +1,9 @@
 package wal
 
 import (
-	"io"
 	"encoding/binary"
 	"fmt"
+	"io"
 )
 
 func writeStringTo(w io.Writer, s string) (n int64, err error) {
@@ -15,7 +15,7 @@ func writeStringTo(w io.Writer, s string) (n int64, err error) {
 	if err != nil {
 		return 2, fmt.Errorf("Failed to serialize string: %w", err)
 	}
-	return 2 + int64(len(s)),nil
+	return 2 + int64(len(s)), nil
 }
 
 func readStringFrom(r io.Reader, s *string) error {

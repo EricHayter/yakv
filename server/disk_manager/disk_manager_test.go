@@ -1,9 +1,9 @@
 package disk_manager
 
 import (
+	"bytes"
 	"os"
 	"testing"
-	"bytes"
 
 	"github.com/EricHayter/yakv/server/common"
 )

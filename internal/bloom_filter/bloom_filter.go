@@ -1,14 +1,14 @@
 package bloom_filter
 
 import (
-	"hash"
 	"errors"
 	"github.com/twmb/murmur3"
+	"hash"
 )
 
 type BloomFilter struct {
 	filters []hash.Hash32 // k hash functions
-	Bits []bool	// m bits
+	Bits    []bool        // m bits
 }
 
 // Maybe do this auto scaling with a minimum acceptable rate?
@@ -23,13 +23,13 @@ func New(numBits uint, numHashFunctions uint) (*BloomFilter, error) {
 
 	// Ensure that the number of bits is a power of 2 otherwise we will skew
 	// our insertions.
-	if numBits & (numBits - 1) != 0 {
+	if numBits&(numBits-1) != 0 {
 		return nil, errors.New("numBits must be a power of 2")
 	}
 
 	bloomFilter := &BloomFilter{
 		filters: make([]hash.Hash32, numHashFunctions),
-		Bits: make([]bool, numBits),
+		Bits:    make([]bool, numBits),
 	}
 
 	for i := range numHashFunctions {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	PageSize = 1 << 12  // 4096 bytes
+	PageSize       = 1 << 12 // 4096 bytes
 	MaxFileHandles = 256
 )
 
@@ -24,9 +24,9 @@ type PageData [PageSize]byte
 // (PageId is uint16, limiting pages per file to 65536)
 
 type DiskManager struct {
-	mu              sync.RWMutex // Protects fileHandleMap and fileReplacer
-	fileHandleMap   map[FileId]*os.File
-	fileReplacer    *lru.Replacer[FileId]
+	mu            sync.RWMutex // Protects fileHandleMap and fileReplacer
+	fileHandleMap map[FileId]*os.File
+	fileReplacer  *lru.Replacer[FileId]
 }
 
 func New() (*DiskManager, error) {

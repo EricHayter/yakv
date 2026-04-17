@@ -25,29 +25,28 @@ package lsm
 
 import (
 	"fmt"
-	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/lsm/sstable"
+	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
-type flushCallback = func (storage_manager.FileId, error)
+type flushCallback = func(storage_manager.FileId, error)
 
 type flushQueue struct {
-	cb flushCallback
-	storageManager  *storage_manager.StorageManager
-	head *flushQueueElement
-	tail *flushQueueElement
+	cb             flushCallback
+	storageManager *storage_manager.StorageManager
+	head           *flushQueueElement
+	tail           *flushQueueElement
 }
 
 type flushQueueElement struct {
-	memtable *types.Memtable
+	memtable   *types.Memtable
 	next, prev *flushQueueElement
 }
 
-
 func newFlushQueue(storageManager *storage_manager.StorageManager, cb flushCallback) *flushQueue {
 	return &flushQueue{
-		cb: cb,
+		cb:             cb,
 		storageManager: storageManager,
 	}
 }
@@ -55,8 +54,8 @@ func newFlushQueue(storageManager *storage_manager.StorageManager, cb flushCallb
 func (fq *flushQueue) PushBack(memtable *types.Memtable) {
 	e := &flushQueueElement{
 		memtable: memtable,
-		next: fq.tail,
-		prev: nil,
+		next:     fq.tail,
+		prev:     nil,
 	}
 
 	if fq.tail != nil {

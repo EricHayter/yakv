@@ -242,7 +242,7 @@ func TestMultiplePages(t *testing.T) {
 		expected := []byte{byte(i), byte(i + 1), byte(i + 2)}
 		page.RLock()
 		buffer := page.GetBuffer()
-		copy(buffer[:], expected)  // Write via buffer manager too
+		copy(buffer[:], expected) // Write via buffer manager too
 		page.RUnlock()
 		page.MarkDirty()
 		page.Close()

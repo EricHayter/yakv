@@ -81,9 +81,9 @@ func TestSerializeExactly8Bools(t *testing.T) {
 
 func TestSerializeMoreThan8Bools(t *testing.T) {
 	bools := []bool{
-		true, false, true, false, true, false, true, false,  // byte 0
-		false, true, false, true, false, true, false, true,  // byte 1
-		true, true, false, false,                             // byte 2 (partial)
+		true, false, true, false, true, false, true, false, // byte 0
+		false, true, false, true, false, true, false, true, // byte 1
+		true, true, false, false, // byte 2 (partial)
 	}
 
 	packed := Pack(bools)

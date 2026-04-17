@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"net"
 
-	"google.golang.org/grpc"
 	pb "github.com/EricHayter/yakv/proto"
+	"google.golang.org/grpc"
 )
 
 var (
-	port = flag.Int("port", 50051, "The server port")
+	port     = flag.Int("port", 50051, "The server port")
 	database = make(map[string]string)
 )
 
@@ -36,7 +36,7 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 
 func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteResponse, error) {
 	delete(database, in.GetKey())
-	return &pb.DeleteResponse{ Status: pb.Status_SUCCESS}, nil
+	return &pb.DeleteResponse{Status: pb.Status_SUCCESS}, nil
 }
 
 func main() {

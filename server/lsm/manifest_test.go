@@ -180,7 +180,7 @@ func TestVersionEmptyLevel(t *testing.T) {
 		lastTimestamp: 100,
 		sstables: [][]disk_manager.FileId{
 			{1, 2, 3},
-			{},           // Empty level
+			{}, // Empty level
 			{4, 5},
 		},
 	}
@@ -254,7 +254,7 @@ func TestManifestFlushAndLoad(t *testing.T) {
 
 	// Create manifest
 	m := &manifest{
-		lsm:            lsm,
+		lsm: lsm,
 	}
 
 	// Flush to disk
@@ -316,7 +316,7 @@ func TestManifestAtomicWrite(t *testing.T) {
 		storageManager: sm,
 	}
 	m := &manifest{
-		lsm:            lsm,
+		lsm: lsm,
 	}
 
 	if err := m.flushLsmMetadata(); err != nil {
@@ -376,7 +376,7 @@ func TestManifestFlushCreatesFile(t *testing.T) {
 		storageManager: sm,
 	}
 	m := &manifest{
-		lsm:            lsm,
+		lsm: lsm,
 	}
 
 	if err := m.flushLsmMetadata(); err != nil {

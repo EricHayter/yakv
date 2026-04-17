@@ -1,8 +1,8 @@
 package sstable
 
 import (
-	"io"
 	"encoding/binary"
+	"io"
 
 	"github.com/EricHayter/yakv/internal/bitpack"
 	"github.com/EricHayter/yakv/internal/bloom_filter"

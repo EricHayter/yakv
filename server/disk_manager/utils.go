@@ -1,10 +1,10 @@
 package disk_manager
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"strconv"
-	"os"
-	"errors"
 
 	"github.com/EricHayter/yakv/server/common"
 )
@@ -14,12 +14,12 @@ func getFilePath(fileId FileId) string {
 }
 
 func fileExists(filePath string) (bool, error) {
-    _, err := os.Stat(filePath)
-    if err == nil {
-        return true, nil
-    }
-    if errors.Is(err, os.ErrNotExist) {
-        return false, nil
-    }
-    return false, err
+	_, err := os.Stat(filePath)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }

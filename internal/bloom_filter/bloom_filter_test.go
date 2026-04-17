@@ -6,11 +6,11 @@ import (
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		name               string
-		numBits            uint
-		numHashFunctions   uint
-		expectError        bool
-		errorMsg           string
+		name             string
+		numBits          uint
+		numHashFunctions uint
+		expectError      bool
+		errorMsg         string
 	}{
 		{
 			name:             "valid power of 2",

@@ -26,11 +26,11 @@ const (
 )
 
 type WriteAheadLog struct {
-	flushSignaler  <-chan struct{} // Triggers explicit flushes
-	quit           chan struct{}   // Signals: "please stop"
-	done           chan struct{}   // Signals: "I've stopped"
-	mu             sync.Mutex
-	buffer         []Log
+	flushSignaler <-chan struct{} // Triggers explicit flushes
+	quit          chan struct{}   // Signals: "please stop"
+	done          chan struct{}   // Signals: "I've stopped"
+	mu            sync.Mutex
+	buffer        []Log
 }
 
 // NewWriteAheadLog creates a new WriteAheadLog and starts the background flusher
@@ -109,7 +109,7 @@ type Log interface {
 }
 
 type WriteLog struct {
-	timestamp uint64
+	timestamp  uint64
 	key, value string
 }
 
@@ -141,7 +141,7 @@ func (l *WriteLog) WriteTo(w io.Writer) (n int64, err error) {
 
 type DeleteLog struct {
 	timestamp uint64
-	key string
+	key       string
 }
 
 func (l *DeleteLog) WriteTo(w io.Writer) (n int64, err error) {
@@ -164,7 +164,7 @@ func (l *DeleteLog) WriteTo(w io.Writer) (n int64, err error) {
 	return
 }
 
-type CheckpointLog struct {}
+type CheckpointLog struct{}
 
 func (l *CheckpointLog) WriteTo(w io.Writer) (n int64, err error) {
 	err = binary.Write(w, binary.LittleEndian, CheckpointType)

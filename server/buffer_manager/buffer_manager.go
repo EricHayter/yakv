@@ -2,9 +2,9 @@ package buffer_manager
 
 import (
 	"errors"
-	"sync"
-	"github.com/EricHayter/yakv/server/disk_manager"
 	"github.com/EricHayter/yakv/internal/lru"
+	"github.com/EricHayter/yakv/server/disk_manager"
+	"sync"
 )
 
 func GetPageId(offset uint64) disk_manager.PageId {
@@ -19,13 +19,13 @@ type pageKey struct {
 }
 
 type frame struct {
-	id 			frameId
-	fileId 		disk_manager.FileId
-	pageId 		disk_manager.PageId
-	dirty 		bool
-	mut 		sync.RWMutex  // Protects fileId, pageId, dirty, buffer
-	pinCount 	uint32        // Protected by BufferManager.mu
-	buffer 		*disk_manager.PageData
+	id       frameId
+	fileId   disk_manager.FileId
+	pageId   disk_manager.PageId
+	dirty    bool
+	mut      sync.RWMutex // Protects fileId, pageId, dirty, buffer
+	pinCount uint32       // Protected by BufferManager.mu
+	buffer   *disk_manager.PageData
 }
 
 type Page struct {
@@ -87,19 +87,19 @@ func (page *Page) MarkDirty() {
 
 func New(pageCapacity uint16, diskManager *disk_manager.DiskManager) (*BufferManager, error) {
 	bufferManager := &BufferManager{
-		filePageMap: make(map[pageKey]frameId),
-		frames: make([]frame, pageCapacity),
-		diskManager: diskManager,
+		filePageMap:   make(map[pageKey]frameId),
+		frames:        make([]frame, pageCapacity),
+		diskManager:   diskManager,
 		frameReplacer: lru.New[frameId](),
 	}
 
 	for i := range pageCapacity {
 		bufferManager.frameReplacer.Push(frameId(i))
 		bufferManager.frames[i] = frame{
-			id: frameId(i),
-			mut: sync.RWMutex{},
+			id:       frameId(i),
+			mut:      sync.RWMutex{},
 			pinCount: 0,
-			buffer: new(disk_manager.PageData),
+			buffer:   new(disk_manager.PageData),
 		}
 	}
 
@@ -107,7 +107,7 @@ func New(pageCapacity uint16, diskManager *disk_manager.DiskManager) (*BufferMan
 }
 
 type BufferManager struct {
-	mu            sync.Mutex  // Protects pin count + replacer coordination
+	mu            sync.Mutex // Protects pin count + replacer coordination
 	filePageMap   map[pageKey]frameId
 	frames        []frame
 	diskManager   *disk_manager.DiskManager
@@ -155,7 +155,7 @@ func (bufferManager *BufferManager) GetPage(fileId disk_manager.FileId, pageId d
 	if prs {
 		// Page is already in buffer, just pin it
 		bufferManager.pinPage(frameId)
-		return Page{ bufferManager: bufferManager, frameId: frameId }, nil
+		return Page{bufferManager: bufferManager, frameId: frameId}, nil
 	}
 
 	// Page not in buffer, need to load from disk
@@ -164,7 +164,7 @@ func (bufferManager *BufferManager) GetPage(fileId disk_manager.FileId, pageId d
 
 // loadPageLocked loads a page from disk into the buffer pool.
 // Caller must hold bm.mu.
-func (bufferManager* BufferManager) loadPageLocked(fileId disk_manager.FileId, pageId disk_manager.PageId) (Page, error) {
+func (bufferManager *BufferManager) loadPageLocked(fileId disk_manager.FileId, pageId disk_manager.PageId) (Page, error) {
 	key := pageKey{
 		fileId: fileId,
 		pageId: pageId,
@@ -248,11 +248,11 @@ func (bufferManager* BufferManager) loadPageLocked(fileId disk_manager.FileId, p
 
 	// Note: page mapping already added at the beginning of this function
 
-	return Page{ bufferManager: bufferManager, frameId: frameId }, nil
+	return Page{bufferManager: bufferManager, frameId: frameId}, nil
 }
 
 // FlushPage writes a dirty page back to disk.
-func (bufferManager* BufferManager) FlushPage(fileId disk_manager.FileId, pageId disk_manager.PageId) error {
+func (bufferManager *BufferManager) FlushPage(fileId disk_manager.FileId, pageId disk_manager.PageId) error {
 	key := pageKey{fileId: fileId, pageId: pageId}
 
 	// Lock to check if page is in buffer
@@ -290,4 +290,3 @@ func (bufferManager* BufferManager) FlushPage(fileId disk_manager.FileId, pageId
 
 	return err
 }
-
