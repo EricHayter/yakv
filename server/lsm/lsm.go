@@ -81,7 +81,7 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 	}
 
 	lsm.flushQueue = *newFlushQueue(lsm.storageManager, lsm.onMemtableFlush)
-	lsm.manifest = newManifest(lsm, storageManager, flushSignaler)
+	lsm.manifest = newManifest(lsm, flushSignaler)
 
 	return lsm, nil
 }

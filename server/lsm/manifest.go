@@ -55,7 +55,6 @@ type manifest struct {
 	syncing        atomic.Bool
 	flushSignaler  <-chan struct{}
 	done           chan struct{} // Signals when flusher has stopped so that Close will wait for flusher to complete
-	storageManager *storage_manager.StorageManager
 	lsm            *LogStructuredMergeTree
 }
 
@@ -220,18 +219,16 @@ func loadVersion() (*version, error) {
 }
 
 // newManifest creates a new manifest for the given LSM and starts the background flusher.
-func newManifest(lsm *LogStructuredMergeTree, storageManager *storage_manager.StorageManager, flushSignaler <-chan struct{}) *manifest {
+func newManifest(lsm *LogStructuredMergeTree, flushSignaler <-chan struct{}) *manifest {
 	m := &manifest{
 		flushSignaler:  flushSignaler,
 		done:           make(chan struct{}),
-		storageManager: storageManager,
 		lsm:            lsm,
 	}
 	m.syncing.Store(true)
 
 	// Start background flusher
 	go m.versionFlusher()
-
 	return m
 }
 

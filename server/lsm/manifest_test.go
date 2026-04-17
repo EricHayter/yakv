@@ -254,7 +254,6 @@ func TestManifestFlushAndLoad(t *testing.T) {
 	// Create manifest
 	m := &manifest{
 		lsm:            lsm,
-		storageManager: sm,
 	}
 
 	// Flush to disk
@@ -317,7 +316,6 @@ func TestManifestAtomicWrite(t *testing.T) {
 	}
 	m := &manifest{
 		lsm:            lsm,
-		storageManager: sm,
 	}
 
 	if err := m.flushLsmMetadata(); err != nil {
@@ -378,7 +376,6 @@ func TestManifestFlushCreatesFile(t *testing.T) {
 	}
 	m := &manifest{
 		lsm:            lsm,
-		storageManager: sm,
 	}
 
 	if err := m.flushLsmMetadata(); err != nil {
