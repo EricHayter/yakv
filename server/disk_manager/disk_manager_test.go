@@ -4,11 +4,13 @@ import (
 	"os"
 	"testing"
 	"bytes"
+
+	"github.com/EricHayter/yakv/server/common"
 )
 
 func setupTest(t *testing.T) (*DiskManager, func()) {
 	// Clean up yakv directory before test
-	os.RemoveAll(YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
 
 	dm, err := New()
 	if err != nil {
@@ -17,7 +19,7 @@ func setupTest(t *testing.T) (*DiskManager, func()) {
 
 	cleanup := func() {
 		dm.Close()
-		os.RemoveAll(YakvDirectory)
+		os.RemoveAll(common.YakvDirectory)
 	}
 
 	return dm, cleanup
@@ -44,7 +46,7 @@ func TestNew(t *testing.T) {
 
 func TestNew_CreatesDirectory(t *testing.T) {
 	// Ensure directory doesn't exist
-	os.RemoveAll(YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
 
 	dm, err := New()
 	if err != nil {
@@ -52,11 +54,11 @@ func TestNew_CreatesDirectory(t *testing.T) {
 	}
 	defer func() {
 		dm.Close()
-		os.RemoveAll(YakvDirectory)
+		os.RemoveAll(common.YakvDirectory)
 	}()
 
 	// Check directory exists
-	info, err := os.Stat(YakvDirectory)
+	info, err := os.Stat(common.YakvDirectory)
 	if err != nil {
 		t.Fatalf("Directory was not created: %v", err)
 	}
@@ -337,8 +339,8 @@ func TestWriteAndReadPage_MultipleFiles(t *testing.T) {
 
 func TestPersistence_DataSurvivesClose(t *testing.T) {
 	// Clean up before test
-	os.RemoveAll(YakvDirectory)
-	defer os.RemoveAll(YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
+	defer os.RemoveAll(common.YakvDirectory)
 
 	fileId := FileId(700)
 	testData := &PageData{}
@@ -388,8 +390,8 @@ func TestPersistence_DataSurvivesClose(t *testing.T) {
 
 func TestPersistence_FileExistsAfterClose(t *testing.T) {
 	// Clean up before and after test
-	os.RemoveAll(YakvDirectory)
-	defer os.RemoveAll(YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
+	defer os.RemoveAll(common.YakvDirectory)
 
 	fileId := FileId(800)
 

@@ -5,10 +5,12 @@ import (
 	"strconv"
 	"os"
 	"errors"
+
+	"github.com/EricHayter/yakv/server/common"
 )
 
 func getFilePath(fileId FileId) string {
-	return filepath.Join(YakvDirectory, strconv.FormatUint(uint64(fileId), 10))
+	return filepath.Join(common.YakvDirectory, strconv.FormatUint(uint64(fileId), 10))
 }
 
 func fileExists(filePath string) (bool, error) {

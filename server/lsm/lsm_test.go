@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/EricHayter/yakv/server/disk_manager"
+	"github.com/EricHayter/yakv/server/common"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
@@ -15,7 +15,7 @@ func setupTestLSM(t *testing.T) (*LogStructuredMergeTree, func()) {
 	t.Helper()
 
 	// Clean up yakv directory before test
-	os.RemoveAll(disk_manager.YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
 
 	sm, err := storage_manager.New(100)
 	if err != nil {
@@ -29,7 +29,7 @@ func setupTestLSM(t *testing.T) (*LogStructuredMergeTree, func()) {
 
 	cleanup := func() {
 		lsm.Close()
-		os.RemoveAll(disk_manager.YakvDirectory)
+		os.RemoveAll(common.YakvDirectory)
 	}
 
 	return lsm, cleanup

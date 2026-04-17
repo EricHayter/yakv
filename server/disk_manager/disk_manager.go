@@ -8,10 +8,10 @@ import (
 	"sync"
 
 	"github.com/EricHayter/yakv/internal/lru"
+	"github.com/EricHayter/yakv/server/common"
 )
 
 const (
-	YakvDirectory = "yakv"
 	PageSize = 1 << 12  // 4096 bytes
 	MaxFileHandles = 256
 )
@@ -31,7 +31,7 @@ type DiskManager struct {
 
 func New() (*DiskManager, error) {
 	// Create yakv directory if it doesn't exist
-	err := os.MkdirAll(YakvDirectory, 0755)
+	err := os.MkdirAll(common.YakvDirectory, 0755)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create yakv directory: %v", err)
 	}
