@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 
+	"github.com/EricHayter/yakv/server/common"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
 
@@ -44,17 +44,14 @@ var (
  * <fileId for nth table in level n> [fileId]
  */
 
-const (
-	ManifestFileName = "manifest"
-	YakvDirectory = "yakv"
-)
+const ManifestFileName = "manifest"
 
-var ManifestPath = filepath.Join(YakvDirectory, ManifestFileName)
+var ManifestPath = filepath.Join(common.YakvDirectory, ManifestFileName)
 
 type manifest struct {
-	syncing        atomic.Bool
-	flushSignaler  <-chan struct{}
-	done           chan struct{} // Signals when flusher has stopped so that Close will wait for flusher to complete
+	flushSignaler  <-chan struct{} // Signals when flusher has stopped so that Close will wait for flusher to complete
+	quit           chan struct{}   // Signals: "please stop"
+	done           chan struct{}   // Signals: "I've stopped"
 	lsm            *LogStructuredMergeTree
 }
 
@@ -145,7 +142,7 @@ func (m *manifest) flushLsmMetadata() error {
 	v := m.lsm.getVersion()
 
 	// Create temp file in yakv directory (same filesystem for atomic rename)
-	f, err := os.CreateTemp(YakvDirectory, ManifestFileName+"-*.tmp")
+	f, err := os.CreateTemp(common.YakvDirectory, ManifestFileName+"-*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create temp manifest file: %w", err)
 	}
@@ -182,7 +179,7 @@ func (m *manifest) flushLsmMetadata() error {
 
 func (m *manifest) versionFlusher() {
 	defer close(m.done) // Signal when we're done
-	for m.syncing.Load() {
+	for {
 		select {
 		case <-m.flushSignaler:
 			// Explicit signal from LSM (e.g., sstables changed)
@@ -196,6 +193,8 @@ func (m *manifest) versionFlusher() {
 			if err != nil {
 				slog.Error(err.Error())
 			}
+		case <-m.quit:
+			return // Clean shutdown
 		}
 	}
 }
@@ -222,10 +221,10 @@ func loadVersion() (*version, error) {
 func newManifest(lsm *LogStructuredMergeTree, flushSignaler <-chan struct{}) *manifest {
 	m := &manifest{
 		flushSignaler:  flushSignaler,
+		quit:           make(chan struct{}),
 		done:           make(chan struct{}),
 		lsm:            lsm,
 	}
-	m.syncing.Store(true)
 
 	// Start background flusher
 	go m.versionFlusher()
@@ -234,6 +233,6 @@ func newManifest(lsm *LogStructuredMergeTree, flushSignaler <-chan struct{}) *ma
 
 // Close stops the background flusher and waits for it to finish
 func (m *manifest) Close() {
-	m.syncing.Store(false)
-	<-m.done // Wait for flusher to stop
+	close(m.quit) // Signal shutdown
+	<-m.done      // Wait for flusher to stop
 }

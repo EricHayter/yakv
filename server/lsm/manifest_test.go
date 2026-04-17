@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/EricHayter/yakv/server/common"
 	"github.com/EricHayter/yakv/server/disk_manager"
 	"github.com/EricHayter/yakv/server/storage_manager"
 )
@@ -229,11 +230,11 @@ func TestVersionLargeNumberOfLevels(t *testing.T) {
 
 func TestManifestFlushAndLoad(t *testing.T) {
 	// Clean up yakv directory before test
-	os.RemoveAll(disk_manager.YakvDirectory)
-	defer os.RemoveAll(disk_manager.YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
+	defer os.RemoveAll(common.YakvDirectory)
 
 	// Ensure yakv directory exists
-	if err := os.MkdirAll(disk_manager.YakvDirectory, 0755); err != nil {
+	if err := os.MkdirAll(common.YakvDirectory, 0755); err != nil {
 		t.Fatalf("Failed to create yakv directory: %v", err)
 	}
 
@@ -292,11 +293,11 @@ func TestManifestFlushAndLoad(t *testing.T) {
 
 func TestManifestAtomicWrite(t *testing.T) {
 	// Clean up yakv directory before test
-	os.RemoveAll(disk_manager.YakvDirectory)
-	defer os.RemoveAll(disk_manager.YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
+	defer os.RemoveAll(common.YakvDirectory)
 
 	// Ensure yakv directory exists
-	if err := os.MkdirAll(disk_manager.YakvDirectory, 0755); err != nil {
+	if err := os.MkdirAll(common.YakvDirectory, 0755); err != nil {
 		t.Fatalf("Failed to create yakv directory: %v", err)
 	}
 
@@ -353,11 +354,11 @@ func TestManifestAtomicWrite(t *testing.T) {
 
 func TestManifestFlushCreatesFile(t *testing.T) {
 	// Clean up yakv directory before test
-	os.RemoveAll(disk_manager.YakvDirectory)
-	defer os.RemoveAll(disk_manager.YakvDirectory)
+	os.RemoveAll(common.YakvDirectory)
+	defer os.RemoveAll(common.YakvDirectory)
 
 	// Ensure yakv directory exists
-	if err := os.MkdirAll(disk_manager.YakvDirectory, 0755); err != nil {
+	if err := os.MkdirAll(common.YakvDirectory, 0755); err != nil {
 		t.Fatalf("Failed to create yakv directory: %v", err)
 	}
 
