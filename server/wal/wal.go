@@ -9,8 +9,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/EricHayter/yakv/server/common"
 )
 
 type LogType uint8
@@ -26,6 +29,8 @@ const (
 )
 
 type WriteAheadLog struct {
+	lastLSN       uint64
+	walPath       string
 	flushSignaler <-chan struct{} // Triggers explicit flushes
 	quit          chan struct{}   // Signals: "please stop"
 	done          chan struct{}   // Signals: "I've stopped"
@@ -34,17 +39,39 @@ type WriteAheadLog struct {
 }
 
 // NewWriteAheadLog creates a new WriteAheadLog and starts the background flusher
-func NewWriteAheadLog(flushSignaler <-chan struct{}) *WriteAheadLog {
+func NewWriteAheadLog(flushSignaler <-chan struct{}) (*WriteAheadLog, []Log, error) {
+	walPath := filepath.Join(common.YakvDirectory, WriteAheadLogFileName)
+
+	// Try to read existing WAL
+	logs, err := ReadWALToCheckpoint(walPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read WAL during recovery: %w", err)
+	}
+
 	wal := &WriteAheadLog{
+		lastLSN:       uint64(len(logs)),
+		walPath:       walPath,
 		flushSignaler: flushSignaler,
 		quit:          make(chan struct{}),
 		done:          make(chan struct{}),
 		buffer:        make([]Log, 0),
 	}
 
+	// If we have logs, compact the WAL (remove checkpointed data)
+	if len(logs) > 0 {
+		if err := wal.compactWAL(logs); err != nil {
+			return nil, nil, fmt.Errorf("failed to compact WAL: %w", err)
+		}
+	} else {
+		// No existing data - create empty WAL file
+		if err := wal.initializeEmptyWAL(); err != nil {
+			return nil, nil, fmt.Errorf("failed to initialize empty WAL: %w", err)
+		}
+	}
+
 	// Start background flusher
 	go wal.flusher()
-	return wal
+	return wal, logs, nil
 }
 
 // Close stops the background flusher and waits for it to finish
@@ -53,10 +80,41 @@ func (wal *WriteAheadLog) Close() {
 	<-wal.done      // Wait for flusher to stop
 }
 
-func (wal *WriteAheadLog) Push(log Log) {
+// compactWAL creates a new WAL file containing only uncheckpointed logs
+// and atomically replaces the old WAL file
+func (wal *WriteAheadLog) compactWAL(logs []Log) error {
+	return atomicWriteFile(wal.walPath, func(w io.Writer) error {
+		for _, log := range logs {
+			if _, err := log.WriteTo(w); err != nil {
+				return fmt.Errorf("failed to write log during compaction: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// initializeEmptyWAL creates a new empty WAL file
+func (wal *WriteAheadLog) initializeEmptyWAL() error {
+	f, err := os.OpenFile(wal.walPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create empty WAL: %w", err)
+	}
+	defer f.Close()
+
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("failed to sync empty WAL: %w", err)
+	}
+
+	return nil
+}
+
+func (wal *WriteAheadLog) Push(log Log) uint64 {
 	wal.mu.Lock()
+	lsn := wal.lastLSN + 1
+	wal.lastLSN++
 	defer wal.mu.Unlock()
 	wal.buffer = append(wal.buffer, log)
+	return lsn
 }
 
 // goroutine for flushing log files
@@ -86,21 +144,100 @@ func (wal *WriteAheadLog) flushWALBuffer() error {
 	wal.mu.Lock()
 	defer wal.mu.Unlock()
 
-	writeAheadLogPath := "TODOFIX THIS LATER"
-	f, err := os.OpenFile(writeAheadLogPath, os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(wal.walPath, os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("Failed to open WAL file: %s", writeAheadLogPath)
+		return fmt.Errorf("failed to open WAL file: %w", err)
 	}
 	defer f.Close()
 
 	for _, log := range wal.buffer {
-		_, err = log.WriteTo(f)
-		if err != nil {
-			return fmt.Errorf("Failed write log to WAL file: %s", writeAheadLogPath)
+		if _, err := log.WriteTo(f); err != nil {
+			return fmt.Errorf("failed to write log to WAL: %w", err)
 		}
 	}
 
+	// Sync to ensure durability
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("failed to sync WAL: %w", err)
+	}
+
+	// Clear buffer after successful flush
+	wal.buffer = wal.buffer[:0]
+
 	return nil
+}
+
+// ReadWALToCheckpoint reads the WAL file and returns all logs with timestamps after the first checkpoint
+func ReadWALToCheckpoint(walPath string) ([]Log, error) {
+	f, err := os.Open(walPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Log{}, nil
+		}
+		return nil, fmt.Errorf("Failed to open WAL file: %w", err)
+	}
+	defer f.Close()
+
+	var logs []Log
+	var checkpointTimestamp *uint64
+
+	for {
+		var logType LogType
+		err := binary.Read(f, binary.LittleEndian, &logType)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("Failed to read log type: %w", err)
+		}
+
+		switch logType {
+		case CheckpointType:
+			var log CheckpointLog
+			_, err = log.ReadFrom(f)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read CheckpointLog: %w", err)
+			}
+			// Only use the first checkpoint
+			if checkpointTimestamp == nil {
+				checkpointTimestamp = &log.timestamp
+				// Clear any logs collected before the checkpoint
+				logs = make([]Log, 0)
+			}
+		case WriteType:
+			var log WriteLog
+			_, err = log.ReadFrom(f)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read WriteLog: %w", err)
+			}
+			// If we have a checkpoint, check if we can stop
+			if checkpointTimestamp != nil {
+				if log.timestamp <= *checkpointTimestamp {
+					// Timestamps are monotonically increasing, so we're done
+					return logs, nil
+				}
+			}
+			logs = append(logs, &log)
+		case DeleteType:
+			var log DeleteLog
+			_, err = log.ReadFrom(f)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to read DeleteLog: %w", err)
+			}
+			// If we have a checkpoint, check if we can stop
+			if checkpointTimestamp != nil {
+				if log.timestamp <= *checkpointTimestamp {
+					// Timestamps are monotonically increasing, so we're done
+					return logs, nil
+				}
+			}
+			logs = append(logs, &log)
+		default:
+			return nil, fmt.Errorf("Unknown log type: %d", logType)
+		}
+	}
+
+	return logs, nil
 }
 
 type Log interface {
@@ -113,64 +250,38 @@ type WriteLog struct {
 	key, value string
 }
 
-func (l *WriteLog) WriteTo(w io.Writer) (n int64, err error) {
-	err = binary.Write(w, binary.LittleEndian, WriteType)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-	n += 1
-
-	err = binary.Write(w, binary.LittleEndian, l.timestamp)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-
-	bytesWritten, err := writeStringTo(w, l.key)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-	n += bytesWritten
-
-	bytesWritten, err = writeStringTo(w, l.value)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-	n += bytesWritten
-	return
-}
 
 type DeleteLog struct {
 	timestamp uint64
 	key       string
 }
 
-func (l *DeleteLog) WriteTo(w io.Writer) (n int64, err error) {
-	err = binary.Write(w, binary.LittleEndian, DeleteType)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write DeleteLog: %w", err)
-	}
-	n += 1
 
-	err = binary.Write(w, binary.LittleEndian, l.timestamp)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write DeleteLog: %w", err)
-	}
-
-	bytesWritten, err := writeStringTo(w, l.key)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write DeleteLog: %w", err)
-	}
-	n += bytesWritten
-	return
+type CheckpointLog struct {
+	timestamp uint64
 }
 
-type CheckpointLog struct{}
+// Getter methods for log fields
+func (w *WriteLog) Timestamp() uint64 {
+	return w.timestamp
+}
 
-func (l *CheckpointLog) WriteTo(w io.Writer) (n int64, err error) {
-	err = binary.Write(w, binary.LittleEndian, CheckpointType)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write CheckpointLog: %w", err)
-	}
-	n += 1
-	return
+func (w *WriteLog) Key() string {
+	return w.key
+}
+
+func (w *WriteLog) Value() string {
+	return w.value
+}
+
+func (d *DeleteLog) Timestamp() uint64 {
+	return d.timestamp
+}
+
+func (d *DeleteLog) Key() string {
+	return d.key
+}
+
+func (c *CheckpointLog) Timestamp() uint64 {
+	return c.timestamp
 }
