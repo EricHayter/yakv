@@ -163,8 +163,8 @@ func (lsm *LogStructuredMergeTree) Get(key string) (string, bool) {
 
 	// Search flush queue (newest to oldest)
 	// Memtables in flush queue are read-only, safe to access
-	for node := lsm.flushQueue.tail; node != nil; node = node.next {
-		entry, found := node.memtable.Get(key)
+	for _, memtable := range lsm.flushQueue.GetMemtables() {
+		entry, found := memtable.Get(key)
 		if found {
 			if entry.Deleted {
 				return "", false
@@ -212,6 +212,9 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 
 // Close stops background goroutines and closes the storage manager
 func (lsm *LogStructuredMergeTree) Close() error {
+	// Stop flush queue worker (waits for pending flushes to complete)
+	lsm.flushQueue.Close()
+
 	// Stop manifest flusher
 	if lsm.manifest != nil {
 		lsm.manifest.Close()
