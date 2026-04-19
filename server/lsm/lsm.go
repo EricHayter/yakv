@@ -2,11 +2,14 @@ package lsm
 
 import (
 	"fmt"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+
 	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/lsm/types"
 	"github.com/EricHayter/yakv/server/storage_manager"
-	"sync"
-	"sync/atomic"
+	"github.com/EricHayter/yakv/server/wal"
 )
 
 const (
@@ -25,6 +28,7 @@ type LogStructuredMergeTree struct {
 
 	storageManager *storage_manager.StorageManager
 	manifest       *manifest
+	wal            *wal.WriteAheadLog
 	flushSignaler  chan<- struct{}
 }
 
@@ -38,6 +42,12 @@ func (lsm *LogStructuredMergeTree) onMemtableFlush(fileId storage_manager.FileId
 	lsm.mu.Lock()
 	lsm.sstables[0] = append(lsm.sstables[0], fileId)
 	lsm.mu.Unlock()
+
+	// Checkpoint WAL to mark this as a safe recovery point
+	if err := lsm.wal.Checkpoint(); err != nil {
+		// Log error - checkpoint failure is serious but not fatal
+		slog.Error("failed to checkpoint WAL", "error", err)
+	}
 
 	// Signal manifest to flush (non-blocking)
 	select {
@@ -65,28 +75,65 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 		sstables = make([][]storage_manager.FileId, 1)
 	}
 
-	// Create flush signaler channel for manifest
-	flushSignaler := make(chan struct{}, 1)
+	// Create separate flush signaler channels
+	manifestFlushSignaler := make(chan struct{}, 1)
+
+	// Initialize WAL and recover logs
+	writeAheadLog, recoveredLogs, err := wal.NewWriteAheadLog()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize WAL: %w", err)
+	}
 
 	lsm := &LogStructuredMergeTree{
 		memtable:       types.NewMemtable(),
 		sstables:       sstables,
 		storageManager: storageManager,
-		flushSignaler:  flushSignaler,
+		wal:            writeAheadLog,
+		flushSignaler:  manifestFlushSignaler,
+	}
+
+	// Rebuild memtable from recovered WAL logs
+	if err := lsm.initMemtable(recoveredLogs); err != nil {
+		return nil, fmt.Errorf("failed to rebuild memtable from WAL: %w", err)
 	}
 
 	lsm.flushQueue = *newFlushQueue(lsm.storageManager, lsm.onMemtableFlush)
-	lsm.manifest = newManifest(lsm, flushSignaler)
+	lsm.manifest = newManifest(lsm, manifestFlushSignaler)
 
 	return lsm, nil
 }
 
-func (lsm *LogStructuredMergeTree) Put(key, value string, timestamp uint64) {
+func (lsm *LogStructuredMergeTree) initMemtable(logs []wal.Log) error {
+	for _, log := range logs {
+		switch l := log.(type) {
+		case *wal.WriteLog:
+			entry := types.LsmEntry{
+				Timestamp: l.Timestamp(),
+				Deleted:   false,
+				Value:     l.Value(),
+			}
+			lsm.memtable.Insert(l.Key(), entry)
+		case *wal.DeleteLog:
+			entry := types.LsmEntry{
+				Timestamp: l.Timestamp(),
+				Deleted:   true,
+				Value:     "",
+			}
+			lsm.memtable.Insert(l.Key(), entry)
+		}
+	}
+	return nil
+}
+
+func (lsm *LogStructuredMergeTree) Put(key, value string) {
+	// Log to WAL first and get LSN (timestamp will be set by Push)
+	lsn := lsm.wal.Push(wal.NewWriteLog(key, value, 0))
+
 	// Hot path: use read lock since memtable is thread-safe
 	lsm.mu.RLock()
 
 	newEntry := types.LsmEntry{
-		Timestamp: timestamp,
+		Timestamp: lsn,
 		Deleted:   false,
 		Value:     value,
 	}
@@ -110,7 +157,7 @@ func (lsm *LogStructuredMergeTree) Put(key, value string, timestamp uint64) {
 	}
 }
 
-func (lsm *LogStructuredMergeTree) Delete(key string, timestamp uint64) {
+func (lsm *LogStructuredMergeTree) Delete(key string) {
 	/* deleting from the skiplist is not enough to delete from the LSM since
 	 * if we only remove it from the memtable (skiplist) the LSM will search
 	 * for other logs that contain this key which will show previous data
@@ -118,11 +165,14 @@ func (lsm *LogStructuredMergeTree) Delete(key string, timestamp uint64) {
 	 * because of this, we need to explcitly create a new log that states the
 	 * key has been deleted/removed.
 	 */
+	// Log to WAL first and get LSN (timestamp will be set by Push)
+	lsn := lsm.wal.Push(wal.NewDeleteLog(key, 0))
+
 	// Hot path: use read lock since memtable is thread-safe
 	lsm.mu.RLock()
 
 	newEntry := types.LsmEntry{
-		Timestamp: timestamp,
+		Timestamp: lsn,
 		Deleted:   true,
 		Value:     "",
 	}
@@ -214,6 +264,11 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 func (lsm *LogStructuredMergeTree) Close() error {
 	// Stop flush queue worker (waits for pending flushes to complete)
 	lsm.flushQueue.Close()
+
+	// Stop WAL flusher (waits for pending flushes to complete)
+	if lsm.wal != nil {
+		lsm.wal.Close()
+	}
 
 	// Stop manifest flusher
 	if lsm.manifest != nil {

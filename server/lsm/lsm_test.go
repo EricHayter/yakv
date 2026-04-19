@@ -40,7 +40,7 @@ func TestBasicPutGet(t *testing.T) {
 	defer cleanup()
 
 	// Put a value
-	lsm.Put("key1", "value1", 1)
+	lsm.Put("key1", "value1")
 
 	// Get it back
 	value, found := lsm.Get("key1")
@@ -67,7 +67,7 @@ func TestDelete(t *testing.T) {
 	defer cleanup()
 
 	// Put a value
-	lsm.Put("key1", "value1", 1)
+	lsm.Put("key1", "value1")
 
 	// Verify it exists
 	value, found := lsm.Get("key1")
@@ -76,7 +76,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Delete it
-	lsm.Delete("key1", 1)
+	lsm.Delete("key1")
 
 	// Verify it's gone
 	_, found = lsm.Get("key1")
@@ -90,10 +90,10 @@ func TestUpdateValue(t *testing.T) {
 	defer cleanup()
 
 	// Put initial value
-	lsm.Put("key1", "value1", 1)
+	lsm.Put("key1", "value1")
 
 	// Update it
-	lsm.Put("key1", "value2", 1)
+	lsm.Put("key1", "value2")
 
 	// Get updated value
 	value, found := lsm.Get("key1")
@@ -121,7 +121,7 @@ func TestConcurrentWrites(t *testing.T) {
 			for j := range writesPerGoroutine {
 				key := fmt.Sprintf("key-%d-%d", id, j)
 				value := fmt.Sprintf("value-%d-%d", id, j)
-				lsm.Put(key, value, 1)
+				lsm.Put(key, value)
 			}
 		}(i)
 	}
@@ -143,7 +143,7 @@ func TestConcurrentReadsWrites(t *testing.T) {
 	for i := range 100 {
 		key := fmt.Sprintf("key-%d", i)
 		value := fmt.Sprintf("value-%d", i)
-		lsm.Put(key, value, 1)
+		lsm.Put(key, value)
 	}
 
 	var wg sync.WaitGroup
@@ -155,7 +155,7 @@ func TestConcurrentReadsWrites(t *testing.T) {
 		for i := 100; i < 200; i++ {
 			key := fmt.Sprintf("key-%d", i)
 			value := fmt.Sprintf("value-%d", i)
-			lsm.Put(key, value, 1)
+			lsm.Put(key, value)
 		}
 	}()
 
@@ -176,8 +176,8 @@ func TestDeletedFlagRespected(t *testing.T) {
 	defer cleanup()
 
 	// Put, delete, then verify deleted flag works
-	lsm.Put("key1", "value1", 1)
-	lsm.Delete("key1", 1)
+	lsm.Put("key1", "value1")
+	lsm.Delete("key1")
 
 	// Should not find deleted key
 	_, found := lsm.Get("key1")
@@ -193,7 +193,7 @@ func TestMemtableSizeTracking(t *testing.T) {
 	initialSize := atomic.LoadUint64(&lsm.memtableSize)
 
 	// Add an entry
-	lsm.Put("key", "value", 1)
+	lsm.Put("key", "value")
 
 	// Size should have increased
 	currentSize := atomic.LoadUint64(&lsm.memtableSize)
@@ -202,7 +202,7 @@ func TestMemtableSizeTracking(t *testing.T) {
 	}
 
 	// Delete an entry
-	lsm.Delete("key2", 1)
+	lsm.Delete("key2")
 
 	// Size should increase even for deletes (tombstones take space)
 	expectedMinSize := initialSize + uint64(len("key")+len("value")+8+1) + uint64(len("key2")+8+1)

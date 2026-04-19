@@ -44,10 +44,10 @@ func (l *DeleteLog) ReadFrom(r io.Reader) (n int64, err error) {
 	return
 }
 
-func (l *CheckpointLog) ReadFrom(r io.Reader) (n int64, err error) {
+func (l *checkpointLog) ReadFrom(r io.Reader) (n int64, err error) {
 	err = binary.Read(r, binary.LittleEndian, &l.timestamp)
 	if err != nil {
-		return n, fmt.Errorf("Failed to read CheckpointLog: %w", err)
+		return n, fmt.Errorf("Failed to read checkpointLog: %w", err)
 	}
 	n += 8 // uint64 is 8 bytes
 

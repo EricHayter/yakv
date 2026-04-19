@@ -52,16 +52,16 @@ func (l *DeleteLog) WriteTo(w io.Writer) (n int64, err error) {
 	return
 }
 
-func (l *CheckpointLog) WriteTo(w io.Writer) (n int64, err error) {
+func (l *checkpointLog) WriteTo(w io.Writer) (n int64, err error) {
 	err = binary.Write(w, binary.LittleEndian, CheckpointType)
 	if err != nil {
-		return n, fmt.Errorf("Failed to write CheckpointLog: %w", err)
+		return n, fmt.Errorf("Failed to write checkpointLog: %w", err)
 	}
 	n += 1
 
 	err = binary.Write(w, binary.LittleEndian, l.timestamp)
 	if err != nil {
-		return n, fmt.Errorf("Failed to write CheckpointLog: %w", err)
+		return n, fmt.Errorf("Failed to write checkpointLog: %w", err)
 	}
 	n += 8
 
