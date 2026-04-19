@@ -67,11 +67,13 @@ wanted to see what the fuss was all about.
 
 ## Roadmap/Things I want to try out
 
-- [ ] Finish implementing LSM
+- [x] Finish implementing LSM
     - [x] Implement skiplist (for memtable)
     - [x] Implement buffer manager
     - [x] Implement disk manager
     - [x] Implement storage manager
-    - [ ] Implement SS tables / merging algos
-- [ ] Implement a write ahead log (WAL) / get eventual durability implemented
+    - [x] Implement SS tables
+    - [ ] Implement merging of sstables
+- [x] Implement a write ahead log (WAL) / get eventual durability implemented
+- [ ] benchmark against redis
 - [ ] Raft consensus algorithm / make it distributed
