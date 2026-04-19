@@ -10,6 +10,12 @@ yakv (yet another key value store) is a key value store with a dead simple
 interface: `put` to store data, `get` to retrieve it, and `delete` to
 remove it. That's it.
 
+---
+
+[Read the YAKV Blog](https://erichayter.com/yakv-blog/) - Learn about the internals, design decisions, and database implementation details behind YAKV.
+
+---
+
 Start the server:
 ```shell
 ./bin/server
