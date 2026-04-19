@@ -24,13 +24,11 @@ var (
  * tree so that it may be rebuilt after restarts.
  *
  * In particular, the manifest file will contain the following information:
- * - last timestamp inserted into the lsm
  * - information on each of the levels of the sstables in particular, the
  *   number of levels, the amount of files per level, and the file ids of each
  *   of the files in the level.
  *
  * Current format:
- * <latest timestamp> [uint64]
  * <number of levels> [uint16]
  * <entries in level 0> [uint16]
  * <fileId for first table in level 0> [fileId]
@@ -56,17 +54,11 @@ type manifest struct {
 }
 
 type version struct {
-	lastTimestamp uint64
-	sstables      [][]storage_manager.FileId
+	sstables [][]storage_manager.FileId
 }
 
 // serialize writes the version to a writer
 func (v *version) serialize(w io.Writer) error {
-	// Write timestamp
-	if err := binary.Write(w, binary.LittleEndian, v.lastTimestamp); err != nil {
-		return fmt.Errorf("failed to write timestamp: %w", err)
-	}
-
 	// Write number of levels
 	numLevels := uint16(len(v.sstables))
 	if err := binary.Write(w, binary.LittleEndian, numLevels); err != nil {
@@ -94,11 +86,6 @@ func (v *version) serialize(w io.Writer) error {
 // deserializeVersion creates a version from a reader
 func deserializeVersion(r io.Reader) (*version, error) {
 	v := &version{}
-
-	// Read timestamp
-	if err := binary.Read(r, binary.LittleEndian, &v.lastTimestamp); err != nil {
-		return nil, fmt.Errorf("failed to read timestamp: %w", err)
-	}
 
 	// Read number of levels
 	var numLevels uint16

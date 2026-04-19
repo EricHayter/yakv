@@ -17,8 +17,7 @@ type LogStructuredMergeTree struct {
 	mu sync.RWMutex // RLock for reads/writes, Lock for memtable flush and sstable modifications
 
 	// Accessed atomically - must be 64-bit aligned (keep at top of struct)
-	memtableSize  uint64
-	lastTimestamp uint64
+	memtableSize uint64
 
 	memtable   *types.Memtable
 	flushQueue flushQueue
@@ -56,16 +55,13 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 	}
 
 	// Initialize LSM with loaded data or defaults
-	var lastTimestamp uint64
 	var sstables [][]storage_manager.FileId
 
 	if v != nil {
 		// Restore from persisted state
-		lastTimestamp = v.lastTimestamp
 		sstables = v.sstables
 	} else {
 		// Fresh start
-		lastTimestamp = 0
 		sstables = make([][]storage_manager.FileId, 1)
 	}
 
@@ -76,7 +72,6 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 		memtable:       types.NewMemtable(),
 		sstables:       sstables,
 		storageManager: storageManager,
-		lastTimestamp:  lastTimestamp,
 		flushSignaler:  flushSignaler,
 	}
 
@@ -86,11 +81,10 @@ func New(storageManager *storage_manager.StorageManager) (*LogStructuredMergeTre
 	return lsm, nil
 }
 
-func (lsm *LogStructuredMergeTree) Put(key, value string) {
+func (lsm *LogStructuredMergeTree) Put(key, value string, timestamp uint64) {
 	// Hot path: use read lock since memtable is thread-safe
 	lsm.mu.RLock()
 
-	timestamp := atomic.AddUint64(&lsm.lastTimestamp, 1)
 	newEntry := types.LsmEntry{
 		Timestamp: timestamp,
 		Deleted:   false,
@@ -116,7 +110,7 @@ func (lsm *LogStructuredMergeTree) Put(key, value string) {
 	}
 }
 
-func (lsm *LogStructuredMergeTree) Delete(key string) {
+func (lsm *LogStructuredMergeTree) Delete(key string, timestamp uint64) {
 	/* deleting from the skiplist is not enough to delete from the LSM since
 	 * if we only remove it from the memtable (skiplist) the LSM will search
 	 * for other logs that contain this key which will show previous data
@@ -127,7 +121,6 @@ func (lsm *LogStructuredMergeTree) Delete(key string) {
 	// Hot path: use read lock since memtable is thread-safe
 	lsm.mu.RLock()
 
-	timestamp := atomic.AddUint64(&lsm.lastTimestamp, 1)
 	newEntry := types.LsmEntry{
 		Timestamp: timestamp,
 		Deleted:   true,
@@ -206,8 +199,6 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 	lsm.mu.RLock()
 	defer lsm.mu.RUnlock()
 
-	timestamp := atomic.LoadUint64(&lsm.lastTimestamp)
-
 	// Deep copy sstables to avoid data races
 	sstablesCopy := make([][]storage_manager.FileId, len(lsm.sstables))
 	for i := range lsm.sstables {
@@ -215,8 +206,7 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 	}
 
 	return version{
-		lastTimestamp: timestamp,
-		sstables:      sstablesCopy,
+		sstables: sstablesCopy,
 	}
 }
 

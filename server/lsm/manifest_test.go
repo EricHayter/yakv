@@ -12,7 +12,7 @@ import (
 )
 
 // Helper function to create test version
-func createTestVersion(timestamp uint64, levels int, filesPerLevel int) *version {
+func createTestVersion(levels int, filesPerLevel int) *version {
 	sstables := make([][]disk_manager.FileId, levels)
 	fileId := disk_manager.FileId(1)
 
@@ -25,8 +25,7 @@ func createTestVersion(timestamp uint64, levels int, filesPerLevel int) *version
 	}
 
 	return &version{
-		lastTimestamp: timestamp,
-		sstables:      sstables,
+		sstables: sstables,
 	}
 }
 
@@ -37,22 +36,21 @@ func createTestVersion(timestamp uint64, levels int, filesPerLevel int) *version
 func TestVersionSerializeDeserializeRoundTrip(t *testing.T) {
 	tests := []struct {
 		name          string
-		timestamp     uint64
 		levels        int
 		filesPerLevel int
 	}{
-		{"Empty version", 0, 0, 0},
-		{"Single level, single file", 100, 1, 1},
-		{"Single level, multiple files", 200, 1, 5},
-		{"Multiple levels, single file each", 300, 3, 1},
-		{"Multiple levels, multiple files", 500, 4, 3},
-		{"Large timestamp", 18446744073709551615, 2, 2}, // max uint64
+		{"Empty version", 0, 0},
+		{"Single level, single file", 1, 1},
+		{"Single level, multiple files", 1, 5},
+		{"Multiple levels, single file each", 3, 1},
+		{"Multiple levels, multiple files", 4, 3},
+		{"Large number of files", 2, 2}, // max uint64
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create original version
-			original := createTestVersion(tt.timestamp, tt.levels, tt.filesPerLevel)
+			original := createTestVersion(tt.levels, tt.filesPerLevel)
 
 			// Serialize
 			var buf bytes.Buffer
@@ -64,12 +62,6 @@ func TestVersionSerializeDeserializeRoundTrip(t *testing.T) {
 			deserialized, err := deserializeVersion(&buf)
 			if err != nil {
 				t.Fatalf("Deserialize failed: %v", err)
-			}
-
-			// Verify timestamp
-			if deserialized.lastTimestamp != original.lastTimestamp {
-				t.Errorf("Timestamp mismatch: got %d, want %d",
-					deserialized.lastTimestamp, original.lastTimestamp)
 			}
 
 			// Verify number of levels
@@ -107,7 +99,7 @@ func TestVersionDeserializeEmptyData(t *testing.T) {
 
 func TestVersionDeserializeTruncatedData(t *testing.T) {
 	// Create a valid version
-	original := createTestVersion(100, 2, 3)
+	original := createTestVersion(2, 3)
 	var buf bytes.Buffer
 	original.serialize(&buf)
 
@@ -135,7 +127,7 @@ func TestVersionDeserializeTruncatedData(t *testing.T) {
 }
 
 func TestVersionSerializeWriteError(t *testing.T) {
-	version := createTestVersion(100, 2, 3)
+	version := createTestVersion(2, 3)
 
 	// Use a writer that always fails
 	errWriter := &failWriter{}
@@ -152,7 +144,6 @@ func TestVersionSerializeWriteError(t *testing.T) {
 
 func TestVersionEmptyLevels(t *testing.T) {
 	version := &version{
-		lastTimestamp: 42,
 		sstables:      [][]disk_manager.FileId{},
 	}
 
@@ -166,9 +157,6 @@ func TestVersionEmptyLevels(t *testing.T) {
 		t.Fatalf("Deserialize failed: %v", err)
 	}
 
-	if deserialized.lastTimestamp != 42 {
-		t.Errorf("Timestamp mismatch: got %d, want 42", deserialized.lastTimestamp)
-	}
 
 	if len(deserialized.sstables) != 0 {
 		t.Errorf("Expected 0 levels, got %d", len(deserialized.sstables))
@@ -177,7 +165,6 @@ func TestVersionEmptyLevels(t *testing.T) {
 
 func TestVersionEmptyLevel(t *testing.T) {
 	version := &version{
-		lastTimestamp: 100,
 		sstables: [][]disk_manager.FileId{
 			{1, 2, 3},
 			{}, // Empty level
@@ -206,7 +193,7 @@ func TestVersionEmptyLevel(t *testing.T) {
 
 func TestVersionLargeNumberOfLevels(t *testing.T) {
 	const numLevels = 100
-	version := createTestVersion(1000, numLevels, 2)
+	version := createTestVersion(numLevels, 2)
 
 	var buf bytes.Buffer
 	if err := version.serialize(&buf); err != nil {
@@ -245,9 +232,8 @@ func TestManifestFlushAndLoad(t *testing.T) {
 	}
 	defer sm.Close()
 
-	testVersion := createTestVersion(500, 3, 2)
+	testVersion := createTestVersion(3, 2)
 	lsm := &LogStructuredMergeTree{
-		lastTimestamp:  testVersion.lastTimestamp,
 		sstables:       testVersion.sstables,
 		storageManager: sm,
 	}
@@ -280,11 +266,6 @@ func TestManifestFlushAndLoad(t *testing.T) {
 	}
 
 	// Verify data matches
-	if loaded.lastTimestamp != testVersion.lastTimestamp {
-		t.Errorf("Timestamp mismatch: got %d, want %d",
-			loaded.lastTimestamp, testVersion.lastTimestamp)
-	}
-
 	if len(loaded.sstables) != len(testVersion.sstables) {
 		t.Errorf("Level count mismatch: got %d, want %d",
 			len(loaded.sstables), len(testVersion.sstables))
@@ -309,9 +290,8 @@ func TestManifestAtomicWrite(t *testing.T) {
 	defer sm.Close()
 
 	// Create LSM and manifest with initial data
-	testVersion1 := createTestVersion(100, 1, 1)
+	testVersion1 := createTestVersion(1, 1)
 	lsm := &LogStructuredMergeTree{
-		lastTimestamp:  testVersion1.lastTimestamp,
 		sstables:       testVersion1.sstables,
 		storageManager: sm,
 	}
@@ -324,9 +304,8 @@ func TestManifestAtomicWrite(t *testing.T) {
 	}
 
 	// Update LSM data
-	testVersion2 := createTestVersion(200, 2, 2)
+	testVersion2 := createTestVersion(2, 2)
 	lsm.mu.Lock()
-	lsm.lastTimestamp = testVersion2.lastTimestamp
 	lsm.sstables = testVersion2.sstables
 	lsm.mu.Unlock()
 
@@ -342,13 +321,9 @@ func TestManifestAtomicWrite(t *testing.T) {
 	}
 	defer f.Close()
 
-	loaded, err := deserializeVersion(f)
+	_, err = deserializeVersion(f)
 	if err != nil {
 		t.Fatalf("Failed to deserialize: %v", err)
-	}
-
-	if loaded.lastTimestamp != 200 {
-		t.Errorf("Expected timestamp 200, got %d", loaded.lastTimestamp)
 	}
 }
 
@@ -369,9 +344,8 @@ func TestManifestFlushCreatesFile(t *testing.T) {
 	}
 	defer sm.Close()
 
-	testVersion := createTestVersion(42, 1, 1)
+	testVersion := createTestVersion(1, 1)
 	lsm := &LogStructuredMergeTree{
-		lastTimestamp:  testVersion.lastTimestamp,
 		sstables:       testVersion.sstables,
 		storageManager: sm,
 	}

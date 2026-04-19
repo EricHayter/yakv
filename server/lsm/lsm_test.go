@@ -40,7 +40,7 @@ func TestBasicPutGet(t *testing.T) {
 	defer cleanup()
 
 	// Put a value
-	lsm.Put("key1", "value1")
+	lsm.Put("key1", "value1", 1)
 
 	// Get it back
 	value, found := lsm.Get("key1")
@@ -67,7 +67,7 @@ func TestDelete(t *testing.T) {
 	defer cleanup()
 
 	// Put a value
-	lsm.Put("key1", "value1")
+	lsm.Put("key1", "value1", 1)
 
 	// Verify it exists
 	value, found := lsm.Get("key1")
@@ -76,7 +76,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Delete it
-	lsm.Delete("key1")
+	lsm.Delete("key1", 1)
 
 	// Verify it's gone
 	_, found = lsm.Get("key1")
@@ -90,10 +90,10 @@ func TestUpdateValue(t *testing.T) {
 	defer cleanup()
 
 	// Put initial value
-	lsm.Put("key1", "value1")
+	lsm.Put("key1", "value1", 1)
 
 	// Update it
-	lsm.Put("key1", "value2")
+	lsm.Put("key1", "value2", 1)
 
 	// Get updated value
 	value, found := lsm.Get("key1")
@@ -121,7 +121,7 @@ func TestConcurrentWrites(t *testing.T) {
 			for j := range writesPerGoroutine {
 				key := fmt.Sprintf("key-%d-%d", id, j)
 				value := fmt.Sprintf("value-%d-%d", id, j)
-				lsm.Put(key, value)
+				lsm.Put(key, value, 1)
 			}
 		}(i)
 	}
@@ -143,7 +143,7 @@ func TestConcurrentReadsWrites(t *testing.T) {
 	for i := range 100 {
 		key := fmt.Sprintf("key-%d", i)
 		value := fmt.Sprintf("value-%d", i)
-		lsm.Put(key, value)
+		lsm.Put(key, value, 1)
 	}
 
 	var wg sync.WaitGroup
@@ -155,7 +155,7 @@ func TestConcurrentReadsWrites(t *testing.T) {
 		for i := 100; i < 200; i++ {
 			key := fmt.Sprintf("key-%d", i)
 			value := fmt.Sprintf("value-%d", i)
-			lsm.Put(key, value)
+			lsm.Put(key, value, 1)
 		}
 	}()
 
@@ -176,8 +176,8 @@ func TestDeletedFlagRespected(t *testing.T) {
 	defer cleanup()
 
 	// Put, delete, then verify deleted flag works
-	lsm.Put("key1", "value1")
-	lsm.Delete("key1")
+	lsm.Put("key1", "value1", 1)
+	lsm.Delete("key1", 1)
 
 	// Should not find deleted key
 	_, found := lsm.Get("key1")
@@ -193,7 +193,7 @@ func TestMemtableSizeTracking(t *testing.T) {
 	initialSize := atomic.LoadUint64(&lsm.memtableSize)
 
 	// Add an entry
-	lsm.Put("key", "value")
+	lsm.Put("key", "value", 1)
 
 	// Size should have increased
 	currentSize := atomic.LoadUint64(&lsm.memtableSize)
@@ -202,7 +202,7 @@ func TestMemtableSizeTracking(t *testing.T) {
 	}
 
 	// Delete an entry
-	lsm.Delete("key2")
+	lsm.Delete("key2", 1)
 
 	// Size should increase even for deletes (tombstones take space)
 	expectedMinSize := initialSize + uint64(len("key")+len("value")+8+1) + uint64(len("key2")+8+1)
@@ -212,24 +212,4 @@ func TestMemtableSizeTracking(t *testing.T) {
 	}
 }
 
-func TestTimestampIncreases(t *testing.T) {
-	lsm, cleanup := setupTestLSM(t)
-	defer cleanup()
-
-	lsm.Put("key1", "value1")
-	ts1 := atomic.LoadUint64(&lsm.lastTimestamp)
-
-	lsm.Put("key2", "value2")
-	ts2 := atomic.LoadUint64(&lsm.lastTimestamp)
-
-	if ts2 <= ts1 {
-		t.Error("Timestamp should increase with each operation")
-	}
-
-	lsm.Delete("key3")
-	ts3 := atomic.LoadUint64(&lsm.lastTimestamp)
-
-	if ts3 <= ts2 {
-		t.Error("Timestamp should increase for deletes too")
-	}
-}
+// TestTimestampIncreases removed - timestamps are now managed by WAL
