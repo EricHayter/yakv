@@ -45,6 +45,23 @@ You'll need `protoc` installed for the protocol buffers. Then just run:
 make
 ```
 
+## Performance
+
+Since the inital working version of YAKV, I'm going to run the same following
+benchmarks to track changes in performance to monitor the effect of
+optimizations that I'm going to try.
+
+Benchmarks for concurrent mixed workloads (4 threads):
+
+![Performance Chart](docs/perf.png)
+
+Benchmarked on Intel(R) Core(TM) i5-6300U CPU @ 2.40GHz:
+
+Run benchmarks yourself:
+```shell
+go test -bench=BenchmarkConcurrentMixed -benchmem ./server/lsm
+```
+
 ## Goal
 
 The main goal of this project is to explore database concepts in a smaller, more
