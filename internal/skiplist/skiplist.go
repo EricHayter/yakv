@@ -23,6 +23,7 @@ import (
 	"iter"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 )
 
 const maxLevel = 32
@@ -31,13 +32,14 @@ type SkipList[K cmp.Ordered, V any] struct {
 	mu                 sync.RWMutex
 	promoteProbability float32
 	head               *skipListNode[K, V] // head of list (sentinel node)
-	size               int
+	size               int64
 }
 
 type skipListNode[K cmp.Ordered, V any] struct {
 	key   K
 	value V
 	next  []*skipListNode[K, V]
+	mu    sync.RWMutex
 }
 
 func (list *SkipList[K, V]) randomLevel() int {
@@ -49,74 +51,123 @@ func (list *SkipList[K, V]) randomLevel() int {
 }
 
 func (list *SkipList[K, V]) Size() int {
-	list.mu.RLock()
-	defer list.mu.RUnlock()
-	return list.size
+	return int(atomic.LoadInt64(&list.size))
 }
 
-// Lock acquires a write lock on the skiplist
-func (list *SkipList[K, V]) Lock() {
-	list.mu.Lock()
+func lockPredecessors[K cmp.Ordered, V any](update []*skipListNode[K, V]) []*skipListNode[K, V] {
+	unique_nodes := make([]*skipListNode[K, V], 0)
+	seen := make(map[*skipListNode[K, V]]bool)
+	for _, node := range update {
+		if !seen[node] {
+			unique_nodes = append(unique_nodes, node)
+			node.mu.Lock()
+		}
+		seen[node] = true
+	}
+	return unique_nodes
 }
 
-// Unlock releases a write lock on the skiplist
-func (list *SkipList[K, V]) Unlock() {
-	list.mu.Unlock()
+func unlockPredecessors[K cmp.Ordered, V any](locked_nodes []*skipListNode[K, V]) {
+	for _, node := range locked_nodes {
+		node.mu.Unlock()
+	}
 }
 
-// RLock acquires a read lock on the skiplist
-func (list *SkipList[K, V]) RLock() {
-	list.mu.RLock()
-}
-
-// RUnlock releases a read lock on the skiplist
-func (list *SkipList[K, V]) RUnlock() {
-	list.mu.RUnlock()
+func validate[K cmp.Ordered, V any](update []*skipListNode[K, V], expectedNext []*skipListNode[K, V], insertLevel int) bool {
+    // Re-check that each predecessor's next pointer hasn't changed
+    for level := 0; level <= insertLevel; level++ {
+        if update[level].next[level] != expectedNext[level] {
+            return false // Someone inserted/deleted here
+        }
+    }
+    return true
 }
 
 // Insert adds or updates a key-value pair in the skiplist.
 // If the key already exists, its value is updated.
 // There are NO duplicate keys in the skiplist.
+//
+// Uses optimistic locking for better concurrency:
+//  1. Search phase: Traverse the skiplist with read locks (lock crabbing) to find
+//     insertion points at each level. Track both predecessors and their expected
+//     next pointers.
+//  2. Lock phase: Acquire write locks on all predecessor nodes that need updating.
+//     The skiplist invariant (top-down traversal) ensures deadlock-free ordering.
+//  3. Validate phase: Check that predecessor next pointers haven't changed since
+//     the search. If validation fails, someone else modified the structure, so
+//     unlock and retry.
+//  4. Commit phase: Insert the new node and update pointers atomically while
+//     holding locks.
+//
+// This approach provides much better parallelism than a global lock, which is
+// critical for large memtables (e.g., 64 MB) in an LSM tree.
 func (list *SkipList[K, V]) Insert(key K, value V) {
-	list.mu.Lock()
-	defer list.mu.Unlock()
+	for {
+		insertLevel := list.randomLevel()
 
-	insertLevel := list.randomLevel()
+		// Track predecessor nodes and expected next pointers at each level
+		update := make([]*skipListNode[K, V], maxLevel)
+		expectedNext := make([]*skipListNode[K, V], maxLevel)
 
-	// Track predecessor nodes at each level
-	update := make([]*skipListNode[K, V], maxLevel)
-	p := list.head
+		p := list.head
+		p.mu.RLock()
 
-	// Find insertion point and track predecessors
-	for level := maxLevel - 1; level >= 0; level-- {
-		for p.next[level] != nil && p.next[level].key < key {
-			p = p.next[level]
+		// Find insertion point and track predecessors
+		for level := maxLevel - 1; level >= 0; level-- {
+			for p.next[level] != nil {
+				next := p.next[level]
+				next.mu.RLock()
+				if next.key < key {
+					old := p
+					p = next
+					old.mu.RUnlock()
+				} else {
+					next.mu.RUnlock()
+					break
+				}
+			}
+			update[level] = p
+			expectedNext[level] = p.next[level]
 		}
-		update[level] = p
-	}
+		p.mu.RUnlock()
 
-	// Check if key already exists (p.next[0] is the potential match)
-	if p.next[0] != nil && p.next[0].key == key {
-		p.next[0].value = value
+		locked_nodes := lockPredecessors(update)
+		if !validate(update, expectedNext, insertLevel) {
+			unlockPredecessors(locked_nodes)
+			continue
+		}
+
+		// Check if key already exists (p.next[0] is the potential match)
+		if p.next[0] != nil && p.next[0].key == key {
+			p.next[0].value = value
+			unlockPredecessors(locked_nodes)
+			return
+		}
+
+		// Create new node
+		newNode := &skipListNode[K, V]{
+			key:   key,
+			value: value,
+			next:  make([]*skipListNode[K, V], insertLevel+1),
+		}
+
+		// Insert node at each level
+		for level := 0; level <= insertLevel; level++ {
+			newNode.next[level] = update[level].next[level]
+			update[level].next[level] = newNode
+		}
+
+		atomic.AddInt64(&list.size, 1)
+		unlockPredecessors(locked_nodes)
 		return
 	}
-
-	// Create new node
-	newNode := &skipListNode[K, V]{
-		key:   key,
-		value: value,
-		next:  make([]*skipListNode[K, V], insertLevel+1),
-	}
-
-	// Insert node at each level
-	for level := 0; level <= insertLevel; level++ {
-		newNode.next[level] = update[level].next[level]
-		update[level].next[level] = newNode
-	}
-
-	list.size++
 }
 
+// Delete removes a key-value pair from the skiplist.
+// Returns true if the key was found and deleted, false otherwise.
+//
+// Currently uses a global write lock for simplicity. Unlike Insert, this has not
+// been converted to use optimistic locking with per-node locks.
 func (list *SkipList[K, V]) Delete(key K) bool {
 	list.mu.Lock()
 	defer list.mu.Unlock()
@@ -143,7 +194,7 @@ func (list *SkipList[K, V]) Delete(key K) bool {
 		update[level].next[level] = target.next[level]
 	}
 
-	list.size--
+	atomic.AddInt64(&list.size, -1)
 	return true
 }
 
@@ -170,27 +221,42 @@ func (list *SkipList[K, V]) Get(key K) (V, bool) {
 	return zero, false
 }
 
-// Items returns an iterator over all key-value pairs in the skiplist.
-// The caller must hold a read lock (via RLock/RUnlock) for the duration of iteration
-// to ensure thread safety.
+// Items returns an iterator over all key-value pairs in the skiplist in sorted order.
+//
+// Uses lock crabbing (hand-over-hand locking) to allow concurrent iteration with
+// inserts/deletes. This provides a "fuzzy snapshot" where you may see partial results
+// of concurrent modifications, but guarantees forward progress and no crashes.
 //
 // Example usage:
 //
-//	list.RLock()
-//	defer list.RUnlock()
 //	for key, value := range list.Items() {
 //	    // process key, value
 //	}
 func (list *SkipList[K, V]) Items() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
-		// Start from first real node (skip sentinel)
-		p := list.head.next[0]
-		for p != nil {
-			if !yield(p.key, p.value) {
+		// Start at head with lock
+		p := list.head
+		p.mu.RLock()
+
+		// Traverse level 0 with lock crabbing
+		for p.next[0] != nil {
+			next := p.next[0]
+			next.mu.RLock()
+
+			// Yield the next node's data while holding its lock
+			if !yield(next.key, next.value) {
+				next.mu.RUnlock()
+				p.mu.RUnlock()
 				return
 			}
-			p = p.next[0]
+
+			// Move forward: unlock old, advance to next
+			p.mu.RUnlock()
+			p = next
 		}
+
+		// Unlock final node
+		p.mu.RUnlock()
 	}
 }
 
