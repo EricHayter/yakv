@@ -51,15 +51,9 @@ Since the initial working version of YAKV, I'm going to run the same following
 benchmarks to track changes in performance to monitor the effect of
 optimizations that I'm going to try.
 
-Benchmarks for concurrent mixed workloads (per-core goroutines):
+Benchmarks for concurrent mixed workloads (per-core goroutines), on Intel(R) Core(TM) Ultra 7 265K:
 
-| Workload | ns/op | B/op | allocs/op |
-|---|---|---|---|
-| 90% read / 10% write | 247 | 46 | 3 |
-| 50% read / 50% write | 892 | 137 | 7 |
-| 10% read / 90% write | 1626 | 228 | 11 |
-
-Benchmarked on Intel(R) Core(TM) Ultra 7 265K:
+![Performance Chart](docs/perf.png)
 
 Run benchmarks yourself:
 ```shell
