@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Helper function to dump skiplist contents using the iterator
@@ -462,5 +463,441 @@ func BenchmarkSkipListDelete(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%04d", i)
 		skipList.Delete(key)
+	}
+}
+
+// Concurrency stress tests
+
+func TestConcurrentInserts(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numGoroutines := 10
+	insertsPerGoroutine := 1000
+
+	done := make(chan bool, numGoroutines)
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			for i := 0; i < insertsPerGoroutine; i++ {
+				key := goroutineID*insertsPerGoroutine + i
+				skipList.Insert(key, key*10)
+			}
+			done <- true
+		}(g)
+	}
+
+	// Wait for all goroutines
+	for g := 0; g < numGoroutines; g++ {
+		<-done
+	}
+
+	// Verify all keys were inserted
+	expectedCount := numGoroutines * insertsPerGoroutine
+	if skipList.Size() != expectedCount {
+		t.Errorf("Expected size %d, got %d", expectedCount, skipList.Size())
+	}
+
+	// Verify all keys are retrievable
+	for g := 0; g < numGoroutines; g++ {
+		for i := 0; i < insertsPerGoroutine; i++ {
+			key := g*insertsPerGoroutine + i
+			val, found := skipList.Get(key)
+			if !found {
+				t.Errorf("Key %d not found", key)
+			}
+			if val != key*10 {
+				t.Errorf("Key %d has value %d, expected %d", key, val, key*10)
+			}
+		}
+	}
+}
+
+func TestConcurrentInsertsOverlapping(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numGoroutines := 20
+	insertsPerGoroutine := 500
+	keyRange := 1000 // Smaller than total inserts to force overlap
+
+	done := make(chan bool, numGoroutines)
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			for i := 0; i < insertsPerGoroutine; i++ {
+				key := (goroutineID*insertsPerGoroutine + i) % keyRange
+				skipList.Insert(key, goroutineID*1000+i)
+			}
+			done <- true
+		}(g)
+	}
+
+	// Wait for all goroutines
+	for g := 0; g < numGoroutines; g++ {
+		<-done
+	}
+
+	// Verify size is at most keyRange (due to overlaps)
+	if skipList.Size() > keyRange {
+		t.Errorf("Size should not exceed %d, got %d", keyRange, skipList.Size())
+	}
+
+	// Verify all keys in range exist
+	for i := 0; i < keyRange; i++ {
+		_, found := skipList.Get(i)
+		if !found {
+			t.Errorf("Key %d not found", i)
+		}
+	}
+}
+
+func TestConcurrentReadsAndWrites(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numReaders := 10
+	numWriters := 10
+	duration := 2 // seconds
+	keyRange := 1000
+
+	// Pre-populate some data
+	for i := 0; i < keyRange/2; i++ {
+		skipList.Insert(i, i)
+	}
+
+	done := make(chan bool)
+
+	// Start writers
+	for w := 0; w < numWriters; w++ {
+		go func(writerID int) {
+			start := time.Now()
+			count := 0
+			for time.Since(start).Seconds() < float64(duration) {
+				key := (writerID*1000 + count) % keyRange
+				skipList.Insert(key, writerID*10000+count)
+				count++
+			}
+			done <- true
+		}(w)
+	}
+
+	// Start readers
+	for r := 0; r < numReaders; r++ {
+		go func(readerID int) {
+			start := time.Now()
+			count := 0
+			for time.Since(start).Seconds() < float64(duration) {
+				key := (readerID*100 + count) % keyRange
+				skipList.Get(key)
+				count++
+			}
+			done <- true
+		}(r)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < numReaders+numWriters; i++ {
+		<-done
+	}
+
+	t.Logf("Final size: %d", skipList.Size())
+}
+
+func TestConcurrentDeleteAndInsert(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numGoroutines := 10
+	opsPerGoroutine := 500
+	keyRange := 1000
+
+	// Pre-populate
+	for i := 0; i < keyRange; i++ {
+		skipList.Insert(i, i)
+	}
+
+	done := make(chan bool, numGoroutines*2)
+
+	// Start inserters
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			for i := 0; i < opsPerGoroutine; i++ {
+				key := (goroutineID*opsPerGoroutine + i) % keyRange
+				skipList.Insert(key, goroutineID*10000+i)
+			}
+			done <- true
+		}(g)
+	}
+
+	// Start deleters
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			for i := 0; i < opsPerGoroutine; i++ {
+				key := (goroutineID*opsPerGoroutine + i + 100) % keyRange
+				skipList.Delete(key)
+			}
+			done <- true
+		}(g)
+	}
+
+	// Wait for all
+	for i := 0; i < numGoroutines*2; i++ {
+		<-done
+	}
+
+	t.Logf("Final size: %d (started with %d)", skipList.Size(), keyRange)
+}
+
+func TestConcurrentIteratorWithWrites(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	keyRange := 1000
+	duration := 2 // seconds
+
+	// Pre-populate
+	for i := 0; i < keyRange; i++ {
+		skipList.Insert(i, i)
+	}
+
+	done := make(chan bool)
+
+	// Start a writer
+	go func() {
+		start := time.Now()
+		count := 0
+		for time.Since(start).Seconds() < float64(duration) {
+			key := count % keyRange
+			skipList.Insert(key, count)
+			count++
+		}
+		done <- true
+	}()
+
+	// Start a deleter
+	go func() {
+		start := time.Now()
+		count := 0
+		for time.Since(start).Seconds() < float64(duration) {
+			key := (count + keyRange/2) % keyRange
+			skipList.Delete(key)
+			count++
+		}
+		done <- true
+	}()
+
+	// Start multiple iterators
+	numIterators := 5
+	for i := 0; i < numIterators; i++ {
+		go func() {
+			start := time.Now()
+			iterCount := 0
+			for time.Since(start).Seconds() < float64(duration) {
+				count := 0
+				for range skipList.Items() {
+					count++
+				}
+				iterCount++
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all
+	for i := 0; i < 2+numIterators; i++ {
+		<-done
+	}
+
+	t.Logf("Test completed without deadlock")
+}
+
+func TestHighContentionInserts(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numGoroutines := 50
+	insertsPerGoroutine := 200
+	hotKeyRange := 100 // Small range to force high contention
+
+	done := make(chan bool, numGoroutines)
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			for i := 0; i < insertsPerGoroutine; i++ {
+				key := i % hotKeyRange
+				skipList.Insert(key, goroutineID*10000+i)
+			}
+			done <- true
+		}(g)
+	}
+
+	// Wait for all goroutines
+	for g := 0; g < numGoroutines; g++ {
+		<-done
+	}
+
+	// Size should be at most hotKeyRange
+	if skipList.Size() > hotKeyRange {
+		t.Errorf("Size should not exceed %d, got %d", hotKeyRange, skipList.Size())
+	}
+
+	// All keys in hot range should exist
+	for i := 0; i < hotKeyRange; i++ {
+		_, found := skipList.Get(i)
+		if !found {
+			t.Errorf("Key %d not found", i)
+		}
+	}
+}
+
+func TestStressTestMixedWorkload(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	duration := 3 // seconds
+	keyRange := 2000
+
+	// Pre-populate
+	for i := 0; i < keyRange/2; i++ {
+		skipList.Insert(i, i)
+	}
+
+	done := make(chan bool)
+
+	// Heavy inserters
+	for i := 0; i < 15; i++ {
+		go func(id int) {
+			start := time.Now()
+			count := 0
+			for time.Since(start).Seconds() < float64(duration) {
+				key := (id*10000 + count) % keyRange
+				skipList.Insert(key, count)
+				count++
+			}
+			done <- true
+		}(i)
+	}
+
+	// Readers
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			start := time.Now()
+			count := 0
+			for time.Since(start).Seconds() < float64(duration) {
+				key := (id*5000 + count) % keyRange
+				skipList.Get(key)
+				count++
+			}
+			done <- true
+		}(i)
+	}
+
+	// Deleters
+	for i := 0; i < 5; i++ {
+		go func(id int) {
+			start := time.Now()
+			count := 0
+			for time.Since(start).Seconds() < float64(duration) {
+				key := (id*3000 + count) % keyRange
+				skipList.Delete(key)
+				count++
+			}
+			done <- true
+		}(i)
+	}
+
+	// Iterators
+	for i := 0; i < 3; i++ {
+		go func() {
+			start := time.Now()
+			for time.Since(start).Seconds() < float64(duration) {
+				count := 0
+				for range skipList.Items() {
+					count++
+					if count > keyRange*2 {
+						// Safety check to prevent infinite loops
+						break
+					}
+				}
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all (15 + 10 + 5 + 3 = 33 goroutines)
+	for i := 0; i < 33; i++ {
+		<-done
+	}
+
+	t.Logf("Stress test completed. Final size: %d", skipList.Size())
+}
+
+func TestDeadlockDetection(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numGoroutines := 100
+	insertsPerGoroutine := 100
+	timeout := 10 // seconds
+
+	done := make(chan bool, numGoroutines)
+	completed := make(chan bool)
+
+	// Start goroutines
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			for i := 0; i < insertsPerGoroutine; i++ {
+				// Insert with some overlap to increase contention
+				key := (goroutineID*10 + i) % 500
+				skipList.Insert(key, goroutineID*1000+i)
+			}
+			done <- true
+		}(g)
+	}
+
+	// Monitor completion
+	go func() {
+		for g := 0; g < numGoroutines; g++ {
+			<-done
+		}
+		completed <- true
+	}()
+
+	// Wait with timeout
+	select {
+	case <-completed:
+		t.Logf("All goroutines completed successfully")
+	case <-time.After(time.Duration(timeout) * time.Second):
+		t.Fatalf("Test timed out after %d seconds - likely deadlock or livelock detected", timeout)
+	}
+}
+
+func TestLivelockDetection(t *testing.T) {
+	skipList := NewSkipList[int, int]()
+	numGoroutines := 2
+	duration := 5 // seconds
+
+	successCounts := make([]int64, numGoroutines)
+	done := make(chan bool, numGoroutines)
+
+	// Create high contention scenario
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			count := int64(0)
+			start := time.Now()
+			for time.Since(start).Seconds() < float64(duration) {
+				// All goroutines try to insert into the same small key range
+				key := count % 10
+				skipList.Insert(int(key), int(count))
+				count++
+			}
+			successCounts[goroutineID] = count
+			done <- true
+		}(g)
+	}
+
+	// Wait for all
+	for g := 0; g < numGoroutines; g++ {
+		<-done
+	}
+
+	// Check if any goroutine made very little progress (potential livelock)
+	totalOps := int64(0)
+	minOps := successCounts[0]
+	for _, count := range successCounts {
+		totalOps += count
+		if count < minOps {
+			minOps = count
+		}
+	}
+
+	avgOps := totalOps / int64(numGoroutines)
+	t.Logf("Total operations: %d, Average per goroutine: %d, Min: %d", totalOps, avgOps, minOps)
+
+	// If minimum is less than 10% of average, might indicate livelock
+	if minOps < avgOps/10 {
+		t.Logf("WARNING: Possible livelock detected - goroutine made minimal progress (min: %d, avg: %d)", minOps, avgOps)
 	}
 }

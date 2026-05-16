@@ -54,10 +54,19 @@ func (list *SkipList[K, V]) Size() int {
 	return int(atomic.LoadInt64(&list.size))
 }
 
+// lockPredecessors acquires write locks on all unique predecessor nodes in
+// update, iterating from the highest level down to level 0 (i.e. left to
+// right in the list). This must match the direction of the search phase in
+// Insert, which also traverses left to right while holding read locks.
+// Acquiring write locks in the opposite order (right to left) would create an
+// AB-BA deadlock: a goroutine in the search phase holds a read lock on node X
+// and waits for node Y, while a goroutine in the lock phase holds a write lock
+// on node Y and waits for node X.
 func lockPredecessors[K cmp.Ordered, V any](update []*skipListNode[K, V]) []*skipListNode[K, V] {
 	unique_nodes := make([]*skipListNode[K, V], 0)
 	seen := make(map[*skipListNode[K, V]]bool)
-	for _, node := range update {
+	for i := len(update) - 1; i >= 0; i-- {
+		node := update[i]
 		if !seen[node] {
 			unique_nodes = append(unique_nodes, node)
 			node.mu.Lock()
