@@ -38,7 +38,7 @@ func dumpSkipListHierarchy(t *testing.T, list *SkipList[string, string]) {
 		for p != nil {
 			levelNodes = append(levelNodes, fmt.Sprintf("%s", p.key))
 			if level < len(p.next) {
-				p = p.next[level]
+				p = p.next[level].Load()
 			} else {
 				break
 			}

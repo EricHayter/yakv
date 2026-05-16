@@ -29,17 +29,17 @@ import (
 const maxLevel = 32
 
 type SkipList[K cmp.Ordered, V any] struct {
-	mu                 sync.RWMutex
+	mu                 sync.Mutex // serializes concurrent Deletes
 	promoteProbability float32
 	head               *skipListNode[K, V] // head of list (sentinel node)
 	size               int64
 }
 
 type skipListNode[K cmp.Ordered, V any] struct {
-	key   K
-	value V
-	next  []*skipListNode[K, V]
-	mu    sync.RWMutex
+	key  K
+	val  atomic.Pointer[V]                        // atomic so Get/Items need no locks for reads
+	next []atomic.Pointer[skipListNode[K, V]]     // atomic so traversal needs no locks
+	mu   sync.Mutex                               // held only during Insert commit phase
 }
 
 func (list *SkipList[K, V]) randomLevel() int {
@@ -54,14 +54,10 @@ func (list *SkipList[K, V]) Size() int {
 	return int(atomic.LoadInt64(&list.size))
 }
 
-// lockPredecessors acquires write locks on all unique predecessor nodes in
-// update, iterating from the highest level down to level 0 (i.e. left to
-// right in the list). This must match the direction of the search phase in
-// Insert, which also traverses left to right while holding read locks.
-// Acquiring write locks in the opposite order (right to left) would create an
-// AB-BA deadlock: a goroutine in the search phase holds a read lock on node X
-// and waits for node Y, while a goroutine in the lock phase holds a write lock
-// on node Y and waits for node X.
+// lockPredecessors acquires write locks left to right (highest index first in
+// update, which corresponds to the leftmost/head-side nodes). Iterating from
+// update[maxLevel-1] down to update[0] ensures all concurrent Insert commits
+// acquire overlapping predecessor locks in the same order, preventing deadlock.
 func lockPredecessors[K cmp.Ordered, V any](update []*skipListNode[K, V]) []*skipListNode[K, V] {
 	unique_nodes := make([]*skipListNode[K, V], 0)
 	seen := make(map[*skipListNode[K, V]]bool)
@@ -83,13 +79,12 @@ func unlockPredecessors[K cmp.Ordered, V any](locked_nodes []*skipListNode[K, V]
 }
 
 func validate[K cmp.Ordered, V any](update []*skipListNode[K, V], expectedNext []*skipListNode[K, V], insertLevel int) bool {
-    // Re-check that each predecessor's next pointer hasn't changed
-    for level := 0; level <= insertLevel; level++ {
-        if update[level].next[level] != expectedNext[level] {
-            return false // Someone inserted/deleted here
-        }
-    }
-    return true
+	for level := 0; level <= insertLevel; level++ {
+		if update[level].next[level].Load() != expectedNext[level] {
+			return false
+		}
+	}
+	return true
 }
 
 // Insert adds or updates a key-value pair in the skiplist.
@@ -97,16 +92,15 @@ func validate[K cmp.Ordered, V any](update []*skipListNode[K, V], expectedNext [
 // There are NO duplicate keys in the skiplist.
 //
 // Uses optimistic locking for better concurrency:
-//  1. Search phase: Traverse the skiplist with read locks (lock crabbing) to find
-//     insertion points at each level. Track both predecessors and their expected
-//     next pointers.
-//  2. Lock phase: Acquire write locks on all predecessor nodes that need updating.
-//     The skiplist invariant (top-down traversal) ensures deadlock-free ordering.
+//  1. Search phase: Traverse the skiplist using atomic loads — no locks needed
+//     since next pointers are atomic.Pointer. Track predecessors and their
+//     expected next pointers at each level.
+//  2. Lock phase: Acquire write locks on all predecessor nodes that need updating,
+//     left to right (head-side first) to prevent deadlock between concurrent inserts.
 //  3. Validate phase: Check that predecessor next pointers haven't changed since
 //     the search. If validation fails, someone else modified the structure, so
 //     unlock and retry.
-//  4. Commit phase: Insert the new node and update pointers atomically while
-//     holding locks.
+//  4. Commit phase: Link in the new node with atomic stores while holding locks.
 //
 // This approach provides much better parallelism than a global lock, which is
 // critical for large memtables (e.g., 64 MB) in an LSM tree.
@@ -114,31 +108,23 @@ func (list *SkipList[K, V]) Insert(key K, value V) {
 	for {
 		insertLevel := list.randomLevel()
 
-		// Track predecessor nodes and expected next pointers at each level
 		update := make([]*skipListNode[K, V], maxLevel)
 		expectedNext := make([]*skipListNode[K, V], maxLevel)
 
+		// Search phase: atomic loads, no locking. The validate step catches any
+		// structural changes that raced with this traversal before we commit.
 		p := list.head
-		p.mu.RLock()
-
-		// Find insertion point and track predecessors
 		for level := maxLevel - 1; level >= 0; level-- {
-			for p.next[level] != nil {
-				next := p.next[level]
-				next.mu.RLock()
-				if next.key < key {
-					old := p
-					p = next
-					old.mu.RUnlock()
-				} else {
-					next.mu.RUnlock()
+			for {
+				next := p.next[level].Load()
+				if next == nil || next.key >= key {
 					break
 				}
+				p = next
 			}
 			update[level] = p
-			expectedNext[level] = p.next[level]
+			expectedNext[level] = p.next[level].Load()
 		}
-		p.mu.RUnlock()
 
 		locked_nodes := lockPredecessors(update)
 		if !validate(update, expectedNext, insertLevel) {
@@ -146,24 +132,24 @@ func (list *SkipList[K, V]) Insert(key K, value V) {
 			continue
 		}
 
-		// Check if key already exists (p.next[0] is the potential match)
-		if p.next[0] != nil && p.next[0].key == key {
-			p.next[0].value = value
+		// Check if key already exists
+		existing := expectedNext[0]
+		if existing != nil && existing.key == key {
+			existing.val.Store(&value)
 			unlockPredecessors(locked_nodes)
 			return
 		}
 
-		// Create new node
+		// Create and link new node
 		newNode := &skipListNode[K, V]{
-			key:   key,
-			value: value,
-			next:  make([]*skipListNode[K, V], insertLevel+1),
+			key:  key,
+			next: make([]atomic.Pointer[skipListNode[K, V]], insertLevel+1),
 		}
+		newNode.val.Store(&value)
 
-		// Insert node at each level
 		for level := 0; level <= insertLevel; level++ {
-			newNode.next[level] = update[level].next[level]
-			update[level].next[level] = newNode
+			newNode.next[level].Store(expectedNext[level])
+			update[level].next[level].Store(newNode)
 		}
 
 		atomic.AddInt64(&list.size, 1)
@@ -175,8 +161,9 @@ func (list *SkipList[K, V]) Insert(key K, value V) {
 // Delete removes a key-value pair from the skiplist.
 // Returns true if the key was found and deleted, false otherwise.
 //
-// Currently uses a global write lock for simplicity. Unlike Insert, this has not
-// been converted to use optimistic locking with per-node locks.
+// Uses a global write lock to serialize concurrent deletes. The pointer
+// updates use atomic stores so concurrent lock-free reads (Get, Items) remain
+// safe without taking any lock.
 func (list *SkipList[K, V]) Delete(key K) bool {
 	list.mu.Lock()
 	defer list.mu.Unlock()
@@ -184,57 +171,57 @@ func (list *SkipList[K, V]) Delete(key K) bool {
 	update := make([]*skipListNode[K, V], maxLevel)
 	p := list.head
 
-	// Find the node and track predecessors
 	for level := maxLevel - 1; level >= 0; level-- {
-		for p.next[level] != nil && p.next[level].key < key {
-			p = p.next[level]
+		for {
+			next := p.next[level].Load()
+			if next == nil || next.key >= key {
+				break
+			}
+			p = next
 		}
 		update[level] = p
 	}
 
-	// Check if the key exists
-	target := p.next[0]
+	target := p.next[0].Load()
 	if target == nil || target.key != key {
 		return false
 	}
 
-	// Remove node from all levels
 	for level := 0; level < len(target.next); level++ {
-		update[level].next[level] = target.next[level]
+		update[level].next[level].Store(target.next[level].Load())
 	}
 
 	atomic.AddInt64(&list.size, -1)
 	return true
 }
 
+// Get is fully lock-free. next pointers and values are stored as atomic.Pointer,
+// so concurrent Inserts and Deletes are safe to race with.
 func (list *SkipList[K, V]) Get(key K) (V, bool) {
-	list.mu.RLock()
-	defer list.mu.RUnlock()
-
 	p := list.head
-
-	// Search from top level down
 	for level := maxLevel - 1; level >= 0; level-- {
-		for p.next[level] != nil && p.next[level].key < key {
-			p = p.next[level]
+		for {
+			next := p.next[level].Load()
+			if next == nil || next.key >= key {
+				break
+			}
+			p = next
 		}
 	}
 
-	// Check if we found the key
-	p = p.next[0]
-	if p != nil && p.key == key {
-		return p.value, true
+	next := p.next[0].Load()
+	if next != nil && next.key == key {
+		return *next.val.Load(), true
 	}
-
 	var zero V
 	return zero, false
 }
 
 // Items returns an iterator over all key-value pairs in the skiplist in sorted order.
 //
-// Uses lock crabbing (hand-over-hand locking) to allow concurrent iteration with
-// inserts/deletes. This provides a "fuzzy snapshot" where you may see partial results
-// of concurrent modifications, but guarantees forward progress and no crashes.
+// Uses atomic loads throughout so no locks are needed. This provides a "fuzzy
+// snapshot": you may see partial results of concurrent modifications, but
+// forward progress and crash-safety are guaranteed.
 //
 // Example usage:
 //
@@ -243,43 +230,22 @@ func (list *SkipList[K, V]) Get(key K) (V, bool) {
 //	}
 func (list *SkipList[K, V]) Items() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
-		// Start at head with lock
-		p := list.head
-		p.mu.RLock()
-
-		// Traverse level 0 with lock crabbing
-		for p.next[0] != nil {
-			next := p.next[0]
-			next.mu.RLock()
-
-			// Yield the next node's data while holding its lock
-			if !yield(next.key, next.value) {
-				next.mu.RUnlock()
-				p.mu.RUnlock()
+		p := list.head.next[0].Load()
+		for p != nil {
+			if !yield(p.key, *p.val.Load()) {
 				return
 			}
-
-			// Move forward: unlock old, advance to next
-			p.mu.RUnlock()
-			p = next
+			p = p.next[0].Load()
 		}
-
-		// Unlock final node
-		p.mu.RUnlock()
 	}
 }
 
 func NewSkipList[K cmp.Ordered, V any]() *SkipList[K, V] {
-	// Create sentinel node with maxLevel pointers
 	sentinel := &skipListNode[K, V]{
-		key:   *new(K), // Zero value of K
-		value: *new(V), // Zero value of V
-		next:  make([]*skipListNode[K, V], maxLevel),
+		next: make([]atomic.Pointer[skipListNode[K, V]], maxLevel),
 	}
-
 	return &SkipList[K, V]{
 		promoteProbability: 0.5,
 		head:               sentinel,
-		size:               0,
 	}
 }
