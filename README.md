@@ -47,20 +47,66 @@ make
 
 ## Performance
 
-Since the inital working version of YAKV, I'm going to run the same following
+Since the initial working version of YAKV, I'm going to run the same following
 benchmarks to track changes in performance to monitor the effect of
 optimizations that I'm going to try.
 
-Benchmarks for concurrent mixed workloads (4 threads):
+Benchmarks for concurrent mixed workloads (per-core goroutines):
 
-![Performance Chart](docs/perf.png)
+| Workload | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| 90% read / 10% write | 247 | 46 | 3 |
+| 50% read / 50% write | 892 | 137 | 7 |
+| 10% read / 90% write | 1626 | 228 | 11 |
 
-Benchmarked on Intel(R) Core(TM) i5-6300U CPU @ 2.40GHz:
+Benchmarked on Intel(R) Core(TM) Ultra 7 265K:
 
 Run benchmarks yourself:
 ```shell
 go test -bench=BenchmarkConcurrentMixed -benchmem ./server/lsm
 ```
+
+### Optimization history
+
+**`87c6733` — LSM-level coarse locking**
+
+Initial thread-safe implementation. Read and write operations on the skiplist
+were serialized with a single read-write mutex at the LSM layer. All concurrent
+writers queued behind a global exclusive lock.
+
+**`28375e0` — Per-node locking in skiplist**
+
+Moved the lock from the LSM layer down into the skiplist itself, using a mutex
+per node rather than one global lock. The insert commit phase only locks the
+predecessor nodes that need updating, allowing concurrent inserts into different
+regions of the list to proceed in parallel.
+
+**`289edbd` — Fix deadlock in per-node locking**
+
+Two concurrent inserts with overlapping predecessor sets could deadlock if they
+acquired the same locks in opposite order. Fixed by always locking predecessor
+nodes from highest level to lowest (head-side first), guaranteeing a consistent
+global lock ordering.
+
+**`bd90569` — Atomic pointers for skiplist next pointers**
+
+Replaced raw pointers with `atomic.Pointer` for all `next` fields and node
+values. This made `Get` and `Items` fully lock-free — reads no longer take any
+lock and can run concurrently with writes without blocking.
+
+**Current — CAS-based lock-free insert**
+
+Removed the per-node mutex from `skipListNode` entirely. Insert now uses
+compare-and-swap: level 0 is the commit point (one CAS makes the node logically
+present), and higher levels are linked independently with their own CAS loops.
+A failed CAS at any level just re-finds the predecessor and retries that level —
+no global or per-node locks are held at any point during an insert.
+
+| Workload | global mutex (4 threads) | per-node mutex (per-core) | CAS (per-core) |
+|---|---|---|---|
+| 90% read / 10% write | 648 ns/op | 565 ns/op | **247 ns/op** |
+| 50% read / 50% write | 1256 ns/op | 1762 ns/op | **892 ns/op** |
+| 10% read / 90% write | 1933 ns/op | 2843 ns/op | **1626 ns/op** |
 
 ## Goal
 
@@ -82,15 +128,3 @@ development with notable databases including
 [Weaviate](https://github.com/weaviate/weaviate), so I
 wanted to see what the fuss was all about.
 
-## Roadmap/Things I want to try out
-
-- [x] Finish implementing LSM
-    - [x] Implement skiplist (for memtable)
-    - [x] Implement buffer manager
-    - [x] Implement disk manager
-    - [x] Implement storage manager
-    - [x] Implement SS tables
-    - [ ] Implement merging of sstables
-- [x] Implement a write ahead log (WAL) / get eventual durability implemented
-- [ ] benchmark against redis
-- [ ] Raft consensus algorithm / make it distributed
