@@ -443,32 +443,14 @@ func benchmarkConcurrentMixed(b *testing.B, readPct int) {
 	})
 }
 
-func BenchmarkConcurrentMixed_90Read_10Write_4Threads(b *testing.B) {
-	b.SetParallelism(4)
+func BenchmarkConcurrentMixed_90Read_10Write_PerCore(b *testing.B) {
 	benchmarkConcurrentMixed(b, 90)
 }
 
-func BenchmarkConcurrentMixed_50Read_50Write_4Threads(b *testing.B) {
-	b.SetParallelism(4)
+func BenchmarkConcurrentMixed_50Read_50Write_PerCore(b *testing.B) {
 	benchmarkConcurrentMixed(b, 50)
 }
 
-func BenchmarkConcurrentMixed_10Read_90Write_4Threads(b *testing.B) {
-	b.SetParallelism(4)
-	benchmarkConcurrentMixed(b, 10)
-}
-
-func BenchmarkConcurrentMixed_90Read_10Write_32Threads(b *testing.B) {
-	b.SetParallelism(32)
-	benchmarkConcurrentMixed(b, 90)
-}
-
-func BenchmarkConcurrentMixed_50Read_50Write_32Threads(b *testing.B) {
-	b.SetParallelism(32)
-	benchmarkConcurrentMixed(b, 50)
-}
-
-func BenchmarkConcurrentMixed_10Read_90Write_32Threads(b *testing.B) {
-	b.SetParallelism(32)
+func BenchmarkConcurrentMixed_10Read_90Write_PerCore(b *testing.B) {
 	benchmarkConcurrentMixed(b, 10)
 }
