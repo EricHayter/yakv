@@ -1,69 +1,48 @@
 package wal
 
 import (
-	"io"
 	"encoding/binary"
-	"fmt"
+	"io"
 )
 
-func (l *WriteLog) WriteTo(w io.Writer) (n int64, err error) {
-	err = binary.Write(w, binary.LittleEndian, WriteType)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-	n += 1
-
-	err = binary.Write(w, binary.LittleEndian, l.timestamp)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-
-	bytesWritten, err := writeStringTo(w, l.key)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-	n += bytesWritten
-
-	bytesWritten, err = writeStringTo(w, l.value)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write WriteLog: %w", err)
-	}
-	n += bytesWritten
-	return
+// AppendTo serializes the log onto dst and returns the extended slice, using
+// binary.LittleEndian.AppendUint* instead of reflection-based binary.Write.
+// The byte layout is identical to the previous WriteTo output.
+func (l *WriteLog) AppendTo(dst []byte) []byte {
+	dst = append(dst, byte(WriteType))
+	dst = binary.LittleEndian.AppendUint64(dst, l.timestamp)
+	dst = appendString(dst, l.key)
+	dst = appendString(dst, l.value)
+	return dst
 }
 
-func (l *DeleteLog) WriteTo(w io.Writer) (n int64, err error) {
-	err = binary.Write(w, binary.LittleEndian, DeleteType)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write DeleteLog: %w", err)
-	}
-	n += 1
-
-	err = binary.Write(w, binary.LittleEndian, l.timestamp)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write DeleteLog: %w", err)
-	}
-
-	bytesWritten, err := writeStringTo(w, l.key)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write DeleteLog: %w", err)
-	}
-	n += bytesWritten
-	return
+func (l *DeleteLog) AppendTo(dst []byte) []byte {
+	dst = append(dst, byte(DeleteType))
+	dst = binary.LittleEndian.AppendUint64(dst, l.timestamp)
+	dst = appendString(dst, l.key)
+	return dst
 }
 
-func (l *checkpointLog) WriteTo(w io.Writer) (n int64, err error) {
-	err = binary.Write(w, binary.LittleEndian, CheckpointType)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write checkpointLog: %w", err)
-	}
-	n += 1
+func (l *checkpointLog) AppendTo(dst []byte) []byte {
+	dst = append(dst, byte(CheckpointType))
+	dst = binary.LittleEndian.AppendUint64(dst, l.timestamp)
+	return dst
+}
 
-	err = binary.Write(w, binary.LittleEndian, l.timestamp)
-	if err != nil {
-		return n, fmt.Errorf("Failed to write checkpointLog: %w", err)
-	}
-	n += 8
+// WriteTo writes the log's serialized bytes to w (satisfies io.WriterTo and
+// keeps compaction working). It delegates to AppendTo so the on-disk format is
+// shared with the flush path.
+func (l *WriteLog) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(l.AppendTo(nil))
+	return int64(n), err
+}
 
-	return
+func (l *DeleteLog) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(l.AppendTo(nil))
+	return int64(n), err
+}
+
+func (l *checkpointLog) WriteTo(w io.Writer) (int64, error) {
+	n, err := w.Write(l.AppendTo(nil))
+	return int64(n), err
 }

@@ -32,10 +32,20 @@ type WriteAheadLog struct {
 	lastLSN       uint64
 	walPath       string
 	flushSignaler chan struct{} // Triggers explicit flushes
-	quit          chan struct{}   // Signals: "please stop"
-	done          chan struct{}   // Signals: "I've stopped"
-	mu            sync.Mutex
-	buffer        []Log
+	quit          chan struct{} // Signals: "please stop"
+	done          chan struct{} // Signals: "I've stopped"
+
+	// mu guards lastLSN and buffer only — held briefly by Push and by the
+	// buffer swap in flushWALBuffer. It is NOT held during file I/O.
+	mu     sync.Mutex
+	buffer []Log
+
+	// flushMu serializes flushers and is held across the swap + I/O so batches
+	// are written to the file in LSN order by a single writer at a time. Push
+	// never acquires it, so writers do not block on fsync.
+	flushMu sync.Mutex
+	file    *os.File // kept open across flushes (append mode)
+	scratch []byte   // reusable serialization buffer; only touched under flushMu
 }
 
 // NewWriteAheadLog creates a new WriteAheadLog and starts the background flusher
@@ -69,6 +79,14 @@ func NewWriteAheadLog() (*WriteAheadLog, []Log, error) {
 		}
 	}
 
+	// Open the persistent append handle once, after any compaction/rename above,
+	// and reuse it for every flush (no per-flush open/close).
+	f, err := os.OpenFile(walPath, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open WAL file: %w", err)
+	}
+	wal.file = f
+
 	// Start background flusher
 	go wal.flusher()
 	return wal, logs, nil
@@ -78,6 +96,17 @@ func NewWriteAheadLog() (*WriteAheadLog, []Log, error) {
 func (wal *WriteAheadLog) Close() {
 	close(wal.quit) // Signal shutdown
 	<-wal.done      // Wait for flusher to stop
+
+	// Flush anything buffered since the last periodic flush (the flusher has
+	// stopped, so this is uncontended), then close the file handle.
+	if err := wal.flushWALBuffer(); err != nil {
+		slog.Error("failed to flush WAL on close", "error", err)
+	}
+	if wal.file != nil {
+		if err := wal.file.Close(); err != nil {
+			slog.Error("failed to close WAL file", "error", err)
+		}
+	}
 }
 
 // compactWAL creates a new WAL file containing only uncheckpointed logs
@@ -163,28 +192,36 @@ func (wal *WriteAheadLog) flusher() {
 }
 
 func (wal *WriteAheadLog) flushWALBuffer() error {
+	// Serialize flushers and hold across the swap + I/O so batches are written
+	// in LSN order by a single writer. Push does not take this lock.
+	wal.flushMu.Lock()
+	defer wal.flushMu.Unlock()
+
+	// Swap the pending batch out under mu, then release mu before any I/O so
+	// concurrent Push calls are never blocked on fsync. A fresh backing slice is
+	// installed so Push cannot overwrite the batch we are about to serialize.
 	wal.mu.Lock()
-	defer wal.mu.Unlock()
-
-	f, err := os.OpenFile(wal.walPath, os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open WAL file: %w", err)
+	if len(wal.buffer) == 0 {
+		wal.mu.Unlock()
+		return nil
 	}
-	defer f.Close()
+	batch := wal.buffer
+	wal.buffer = make([]Log, 0, cap(batch))
+	wal.mu.Unlock()
 
-	for _, log := range wal.buffer {
-		if _, err := log.WriteTo(f); err != nil {
-			return fmt.Errorf("failed to write log to WAL: %w", err)
-		}
+	// Serialize the batch into the reusable scratch buffer (no per-field
+	// allocation), then write and fsync — all with wal.mu released.
+	wal.scratch = wal.scratch[:0]
+	for _, log := range batch {
+		wal.scratch = log.AppendTo(wal.scratch)
 	}
 
-	// Sync to ensure durability
-	if err := f.Sync(); err != nil {
+	if _, err := wal.file.Write(wal.scratch); err != nil {
+		return fmt.Errorf("failed to write logs to WAL: %w", err)
+	}
+	if err := wal.file.Sync(); err != nil {
 		return fmt.Errorf("failed to sync WAL: %w", err)
 	}
-
-	// Clear buffer after successful flush
-	wal.buffer = wal.buffer[:0]
 
 	return nil
 }
@@ -265,6 +302,8 @@ func ReadWALToCheckpoint(walPath string) ([]Log, error) {
 type Log interface {
 	io.WriterTo
 	io.ReaderFrom
+	// AppendTo serializes the log onto dst and returns the extended slice.
+	AppendTo(dst []byte) []byte
 }
 
 type WriteLog struct {

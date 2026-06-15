@@ -8,6 +8,13 @@ import (
 	"path/filepath"
 )
 
+// appendString appends s (u16 length prefix + raw bytes) to dst, matching the
+// wire format of writeStringTo without reflection or per-call allocation.
+func appendString(dst []byte, s string) []byte {
+	dst = binary.LittleEndian.AppendUint16(dst, uint16(len(s)))
+	return append(dst, s...)
+}
+
 func writeStringTo(w io.Writer, s string) (n int64, err error) {
 	err = binary.Write(w, binary.LittleEndian, uint16(len(s)))
 	if err != nil {
