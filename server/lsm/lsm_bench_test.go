@@ -286,7 +286,7 @@ func BenchmarkWriteHeavyWithFlushes(b *testing.B) {
 	defer cleanupBenchLSM(b, lsm)
 
 	// Write enough data to trigger flushes
-	// memtableSizeThreshold is 64MB, with ~30 byte entries we need ~2M entries
+	// the memtable arena budget is 64MB, with ~30 byte entries we need ~2M entries
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

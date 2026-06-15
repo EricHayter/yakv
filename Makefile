@@ -1,4 +1,4 @@
-.PHONY: all build clean test proto
+.PHONY: all build clean test bench proto
 
 # Generated files from proto
 PROTO_FILES = proto/yakv.pb.go proto/yakv_grpc.pb.go
@@ -17,7 +17,10 @@ $(PROTO_FILES): ./proto/yakv.proto
 	    ./proto/yakv.proto
 
 test:
-	go test -v ./...
+	go test -race ./...
+
+bench:
+	go test -run '^$$' -bench=. -benchmem ./internal/skiplist/
 
 clean:
 	rm -rf ./bin/ $(PROTO_FILES)

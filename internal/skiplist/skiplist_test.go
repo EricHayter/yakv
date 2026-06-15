@@ -3,6 +3,7 @@ package skiplist
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -319,121 +320,87 @@ func TestSkipListLargeDataset(t *testing.T) {
 	}
 }
 
-func TestSkipListDelete(t *testing.T) {
-	skipList := NewSkipList[string, string]()
-	skipList.Insert("a", "1")
-	skipList.Insert("b", "2")
-	skipList.Insert("c", "3")
+// Append-only / arena tests
 
-	// Delete middle key
-	skipList.Delete("b")
+func TestArenaFullSignalsFull(t *testing.T) {
+	// Small capacity so a handful of inserts exhausts the pools.
+	list := NewSkipListWithCapacity[string, string](64)
 
-	// Verify "b" is gone
-	failed := false
-	_, found := skipList.Get("b")
-	if found {
-		t.Error("Expected deleted key 'b' to not be found")
-		failed = true
-	}
-
-	// Verify other keys still exist
-	v, found := skipList.Get("a")
-	if !found || v != "1" {
-		t.Error("Key 'a' should still exist after deleting 'b'")
-		failed = true
-	}
-
-	v, found = skipList.Get("c")
-	if !found || v != "3" {
-		t.Error("Key 'c' should still exist after deleting 'b'")
-		failed = true
-	}
-
-	if failed {
-		dumpSkipList(t, skipList)
-		dumpSkipListHierarchy(t, skipList)
-	}
-}
-
-func TestSkipListDeleteNonExistent(t *testing.T) {
-	skipList := NewSkipList[string, string]()
-	skipList.Insert("a", "1")
-
-	// Delete non-existent key should not panic
-	skipList.Delete("nonexistent")
-
-	// Original key should still be there
-	v, found := skipList.Get("a")
-	if !found || v != "1" {
-		t.Error("Original key should be unaffected by deleting non-existent key")
-		dumpSkipList(t, skipList)
-		dumpSkipListHierarchy(t, skipList)
-	}
-}
-
-func TestSkipListDeleteAndReinsert(t *testing.T) {
-	skipList := NewSkipList[string, string]()
-	key := "key1"
-
-	// Insert, delete, then reinsert
-	skipList.Insert(key, "value1")
-	skipList.Delete(key)
-
-	_, found := skipList.Get(key)
-	if found {
-		t.Error("Key should not exist after deletion")
-		dumpSkipList(t, skipList)
-		dumpSkipListHierarchy(t, skipList)
-	}
-
-	// Reinsert with different value
-	skipList.Insert(key, "value2")
-	v, found := skipList.Get(key)
-	if !found || v != "value2" {
-		t.Error("Should be able to reinsert deleted key with new value")
-		dumpSkipList(t, skipList)
-		dumpSkipListHierarchy(t, skipList)
-	}
-}
-
-func TestSkipListDeleteAll(t *testing.T) {
-	skipList := NewSkipList[string, string]()
-	keys := []string{"a", "b", "c", "d", "e"}
-
-	// Insert all
-	for _, k := range keys {
-		skipList.Insert(k, k+"_value")
-	}
-
-	// Delete all
-	for _, k := range keys {
-		skipList.Delete(k)
-	}
-
-	// Verify all are gone
-	failed := false
-	for _, k := range keys {
-		_, found := skipList.Get(k)
-		if found {
-			t.Errorf("Key %s should be deleted", k)
-			failed = true
+	full := false
+	inserted := 0
+	for i := 0; i < 1_000_000 && !full; i++ {
+		full = list.Insert(fmt.Sprintf("key%06d", i), "value")
+		if !full {
+			inserted++
 		}
 	}
 
-	if failed {
-		dumpSkipList(t, skipList)
-		dumpSkipListHierarchy(t, skipList)
+	if !full {
+		t.Fatal("expected Insert to eventually report full with a small budget")
 	}
+	if inserted == 0 {
+		t.Fatal("expected at least one successful insert before the arena filled (BR-6)")
+	}
+	if list.Size() != inserted {
+		t.Errorf("Size() = %d, want %d (full inserts must not count)", list.Size(), inserted)
+	}
+	// Entries that were inserted before full must still be readable.
+	if _, ok := list.Get("key000000"); !ok {
+		t.Error("first inserted key not found after arena filled")
+	}
+}
+
+func TestUpdateDoesNotConsumeNodeOrGrowSize(t *testing.T) {
+	list := NewSkipList[string, string]()
+	if full := list.Insert("k", "v1"); full {
+		t.Fatal("unexpected full on first insert")
+	}
+	if list.Size() != 1 {
+		t.Fatalf("Size() = %d, want 1", list.Size())
+	}
+
+	list.Insert("k", "v2")
+	list.Insert("k", "v3")
+
+	if list.Size() != 1 {
+		t.Errorf("Size() = %d, want 1 after updates", list.Size())
+	}
+	if v, ok := list.Get("k"); !ok || v != "v3" {
+		t.Errorf("Get(k) = %q, %v; want v3, true", v, ok)
+	}
+}
+
+func TestFreeReleasesArena(t *testing.T) {
+	list := NewSkipList[string, string]()
+	for i := 0; i < 1000; i++ {
+		list.Insert(fmt.Sprintf("key%04d", i), "value")
+	}
+	// Free must not panic, and a second Free must be a no-op.
+	list.Free()
+	list.Free()
 }
 
 // Benchmark tests
 func BenchmarkSkipListInsert(b *testing.B) {
-	skipList := NewSkipList[string, string]()
+	// Size the pools to b.N so the arena never reports full during the run.
+	skipList := NewSkipListWithCapacity[string, string](b.N + 1)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%d", i)
 		skipList.Insert(key, "value")
 	}
+}
+
+func BenchmarkSkipListInsertParallel(b *testing.B) {
+	skipList := NewSkipListWithCapacity[string, string](b.N + 1)
+	var ctr int64
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			i := atomic.AddInt64(&ctr, 1)
+			skipList.Insert(fmt.Sprintf("key%d", i), "value")
+		}
+	})
 }
 
 func BenchmarkSkipListGet(b *testing.B) {
@@ -448,21 +415,6 @@ func BenchmarkSkipListGet(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%04d", i%10000)
 		skipList.Get(key)
-	}
-}
-
-func BenchmarkSkipListDelete(b *testing.B) {
-	skipList := NewSkipList[string, string]()
-	// Pre-populate with data
-	for i := 0; i < b.N; i++ {
-		key := fmt.Sprintf("key%04d", i)
-		skipList.Insert(key, "value")
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		key := fmt.Sprintf("key%04d", i)
-		skipList.Delete(key)
 	}
 }
 
@@ -596,49 +548,6 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 	t.Logf("Final size: %d", skipList.Size())
 }
 
-func TestConcurrentDeleteAndInsert(t *testing.T) {
-	skipList := NewSkipList[int, int]()
-	numGoroutines := 10
-	opsPerGoroutine := 500
-	keyRange := 1000
-
-	// Pre-populate
-	for i := 0; i < keyRange; i++ {
-		skipList.Insert(i, i)
-	}
-
-	done := make(chan bool, numGoroutines*2)
-
-	// Start inserters
-	for g := 0; g < numGoroutines; g++ {
-		go func(goroutineID int) {
-			for i := 0; i < opsPerGoroutine; i++ {
-				key := (goroutineID*opsPerGoroutine + i) % keyRange
-				skipList.Insert(key, goroutineID*10000+i)
-			}
-			done <- true
-		}(g)
-	}
-
-	// Start deleters
-	for g := 0; g < numGoroutines; g++ {
-		go func(goroutineID int) {
-			for i := 0; i < opsPerGoroutine; i++ {
-				key := (goroutineID*opsPerGoroutine + i + 100) % keyRange
-				skipList.Delete(key)
-			}
-			done <- true
-		}(g)
-	}
-
-	// Wait for all
-	for i := 0; i < numGoroutines*2; i++ {
-		<-done
-	}
-
-	t.Logf("Final size: %d (started with %d)", skipList.Size(), keyRange)
-}
-
 func TestConcurrentIteratorWithWrites(t *testing.T) {
 	skipList := NewSkipList[int, int]()
 	keyRange := 1000
@@ -663,18 +572,6 @@ func TestConcurrentIteratorWithWrites(t *testing.T) {
 		done <- true
 	}()
 
-	// Start a deleter
-	go func() {
-		start := time.Now()
-		count := 0
-		for time.Since(start).Seconds() < float64(duration) {
-			key := (count + keyRange/2) % keyRange
-			skipList.Delete(key)
-			count++
-		}
-		done <- true
-	}()
-
 	// Start multiple iterators
 	numIterators := 5
 	for i := 0; i < numIterators; i++ {
@@ -692,8 +589,8 @@ func TestConcurrentIteratorWithWrites(t *testing.T) {
 		}()
 	}
 
-	// Wait for all
-	for i := 0; i < 2+numIterators; i++ {
+	// Wait for all (1 writer + iterators)
+	for i := 0; i < 1+numIterators; i++ {
 		<-done
 	}
 
@@ -776,20 +673,6 @@ func TestStressTestMixedWorkload(t *testing.T) {
 		}(i)
 	}
 
-	// Deleters
-	for i := 0; i < 5; i++ {
-		go func(id int) {
-			start := time.Now()
-			count := 0
-			for time.Since(start).Seconds() < float64(duration) {
-				key := (id*3000 + count) % keyRange
-				skipList.Delete(key)
-				count++
-			}
-			done <- true
-		}(i)
-	}
-
 	// Iterators
 	for i := 0; i < 3; i++ {
 		go func() {
@@ -808,8 +691,8 @@ func TestStressTestMixedWorkload(t *testing.T) {
 		}()
 	}
 
-	// Wait for all (15 + 10 + 5 + 3 = 33 goroutines)
-	for i := 0; i < 33; i++ {
+	// Wait for all (15 inserters + 10 readers + 3 iterators = 28 goroutines)
+	for i := 0; i < 28; i++ {
 		<-done
 	}
 

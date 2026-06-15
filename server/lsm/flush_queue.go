@@ -73,14 +73,26 @@ func (fq *flushQueue) worker() {
 			fileId, err := sstable.CreateNew(fq.storageManager, memtable)
 			if err != nil {
 				fq.cb(0, fmt.Errorf("failed to create sstable from memtable: %w", err))
-			} else {
-				fq.cb(fileId, nil)
+				// Drop from queue to avoid blocking; do not free on error.
+				fq.mu.Lock()
+				fq.queue = fq.queue[1:]
+				fq.mu.Unlock()
+				continue
 			}
 
-			// Remove from queue
+			// Register the sstable while the memtable is still in the queue so
+			// reads never see a gap (the entry is in the queue, the sstable, or
+			// both — never neither).
+			fq.cb(fileId, nil)
+
+			// Remove from the queue, then drop the memtable's allocation pools.
+			// Free is safe without coordination: the pools are GC-managed slices,
+			// so any in-flight reader still holding a node pointer keeps the
+			// backing memory alive until it is done.
 			fq.mu.Lock()
 			fq.queue = fq.queue[1:]
 			fq.mu.Unlock()
+			memtable.Free()
 
 		case <-fq.quit:
 			// Drain remaining work before shutting down
@@ -99,6 +111,7 @@ func (fq *flushQueue) worker() {
 					fq.cb(0, fmt.Errorf("failed to create sstable from memtable: %w", err))
 				} else {
 					fq.cb(fileId, nil)
+					memtable.Free()
 				}
 			}
 		}

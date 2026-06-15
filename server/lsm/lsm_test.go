@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/EricHayter/yakv/server/common"
@@ -186,29 +185,29 @@ func TestDeletedFlagRespected(t *testing.T) {
 	}
 }
 
-func TestMemtableSizeTracking(t *testing.T) {
+func TestPutUpdateGetRoundTrip(t *testing.T) {
 	lsm, cleanup := setupTestLSM(t)
 	defer cleanup()
 
-	initialSize := atomic.LoadUint64(&lsm.memtableSize)
-
-	// Add an entry
-	lsm.Put("key", "value")
-
-	// Size should have increased
-	currentSize := atomic.LoadUint64(&lsm.memtableSize)
-	if currentSize <= initialSize {
-		t.Error("Memtable size should increase after Put")
+	// Insert a batch of keys and confirm they are all retrievable from the
+	// arena-backed memtable.
+	for i := range 100 {
+		lsm.Put(fmt.Sprintf("key-%d", i), fmt.Sprintf("value-%d", i))
+	}
+	for i := range 100 {
+		v, found := lsm.Get(fmt.Sprintf("key-%d", i))
+		if !found {
+			t.Fatalf("key-%d not found after Put", i)
+		}
+		if want := fmt.Sprintf("value-%d", i); v != want {
+			t.Errorf("Get(key-%d) = %q, want %q", i, v, want)
+		}
 	}
 
-	// Delete an entry
-	lsm.Delete("key2")
-
-	// Size should increase even for deletes (tombstones take space)
-	expectedMinSize := initialSize + uint64(len("key")+len("value")+8+1) + uint64(len("key2")+8+1)
-	finalSize := atomic.LoadUint64(&lsm.memtableSize)
-	if finalSize < expectedMinSize {
-		t.Errorf("Memtable size should be at least %d, got %d", expectedMinSize, finalSize)
+	// Updating an existing key returns the latest value.
+	lsm.Put("key-0", "updated")
+	if v, found := lsm.Get("key-0"); !found || v != "updated" {
+		t.Errorf("Get(key-0) = %q, %v after update; want updated, true", v, found)
 	}
 }
 

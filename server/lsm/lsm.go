@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 
 	"github.com/EricHayter/yakv/server/lsm/sstable"
 	"github.com/EricHayter/yakv/server/lsm/types"
@@ -12,15 +11,8 @@ import (
 	"github.com/EricHayter/yakv/server/wal"
 )
 
-const (
-	memtableSizeThreshold = 1 << 26
-)
-
 type LogStructuredMergeTree struct {
 	mu sync.RWMutex // RLock for reads/writes, Lock for memtable flush and sstable modifications
-
-	// Accessed atomically - must be 64-bit aligned (keep at top of struct)
-	memtableSize uint64
 
 	memtable   *types.Memtable
 	flushQueue flushQueue
@@ -128,33 +120,11 @@ func (lsm *LogStructuredMergeTree) initMemtable(logs []wal.Log) error {
 func (lsm *LogStructuredMergeTree) Put(key, value string) {
 	// Log to WAL first and get LSN (timestamp will be set by Push)
 	lsn := lsm.wal.Push(wal.NewWriteLog(key, value, 0))
-
-	// Hot path: use read lock since memtable is thread-safe
-	lsm.mu.RLock()
-
-	newEntry := types.LsmEntry{
+	lsm.insertEntry(key, types.LsmEntry{
 		Timestamp: lsn,
 		Deleted:   false,
 		Value:     value,
-	}
-	lsm.memtable.Insert(key, newEntry)
-	newSize := atomic.AddUint64(&lsm.memtableSize, uint64(len(key)+len(value)+8+1))
-
-	// Check if we need to flush
-	if newSize >= memtableSizeThreshold {
-		lsm.mu.RUnlock()
-		// Acquire write lock for flush
-		lsm.mu.Lock()
-		// Double-check - another thread might have flushed already
-		if atomic.LoadUint64(&lsm.memtableSize) >= memtableSizeThreshold {
-			lsm.flushQueue.PushBack(lsm.memtable)
-			lsm.memtable = types.NewMemtable()
-			atomic.StoreUint64(&lsm.memtableSize, 0)
-		}
-		lsm.mu.Unlock()
-	} else {
-		lsm.mu.RUnlock()
-	}
+	})
 }
 
 func (lsm *LogStructuredMergeTree) Delete(key string) {
@@ -167,34 +137,40 @@ func (lsm *LogStructuredMergeTree) Delete(key string) {
 	 */
 	// Log to WAL first and get LSN (timestamp will be set by Push)
 	lsn := lsm.wal.Push(wal.NewDeleteLog(key, 0))
-
-	// Hot path: use read lock since memtable is thread-safe
-	lsm.mu.RLock()
-
-	newEntry := types.LsmEntry{
+	lsm.insertEntry(key, types.LsmEntry{
 		Timestamp: lsn,
 		Deleted:   true,
 		Value:     "",
-	}
-	lsm.memtable.Insert(key, newEntry)
-	// Tombstones also count toward memtable size
-	newSize := atomic.AddUint64(&lsm.memtableSize, uint64(len(key)+8+1))
+	})
+}
 
-	// Check if we need to flush
-	if newSize >= memtableSizeThreshold {
-		lsm.mu.RUnlock()
-		// Acquire write lock for flush
-		lsm.mu.Lock()
-		// Double-check - another thread might have flushed already
-		if atomic.LoadUint64(&lsm.memtableSize) >= memtableSizeThreshold {
-			lsm.flushQueue.PushBack(lsm.memtable)
-			lsm.memtable = types.NewMemtable()
-			atomic.StoreUint64(&lsm.memtableSize, 0)
-		}
-		lsm.mu.Unlock()
-	} else {
-		lsm.mu.RUnlock()
+// insertEntry inserts a key/entry into the active memtable. The memtable's arena
+// reports "full" when its byte budget is exhausted; on full we seal the memtable
+// into the flush queue, start a fresh one, and retry the insert. The WAL has
+// already recorded the operation, so this never re-logs.
+func (lsm *LogStructuredMergeTree) insertEntry(key string, entry types.LsmEntry) {
+	// Hot path: a read lock suffices because the memtable is lock-free.
+	lsm.mu.RLock()
+	full := lsm.memtable.Insert(key, entry)
+	lsm.mu.RUnlock()
+	if !full {
+		return
 	}
+
+	// Slow path: arena full. Seal and retry under the write lock.
+	lsm.mu.Lock()
+	defer lsm.mu.Unlock()
+
+	// Another writer may have already sealed and swapped in a fresh memtable;
+	// retry against the current one first.
+	if full := lsm.memtable.Insert(key, entry); !full {
+		return
+	}
+
+	lsm.flushQueue.PushBack(lsm.memtable)
+	lsm.memtable = types.NewMemtable()
+	// A fresh arena always has room for a single entry, so this cannot be full.
+	lsm.memtable.Insert(key, entry)
 }
 
 func (lsm *LogStructuredMergeTree) Get(key string) (string, bool) {
@@ -262,8 +238,15 @@ func (lsm *LogStructuredMergeTree) getVersion() version {
 
 // Close stops background goroutines and closes the storage manager
 func (lsm *LogStructuredMergeTree) Close() error {
-	// Stop flush queue worker (waits for pending flushes to complete)
+	// Stop flush queue worker (waits for pending flushes to complete; this also
+	// frees the arenas of any queued memtables as they are flushed).
 	lsm.flushQueue.Close()
+
+	// Free the active memtable's arena. Safe at shutdown: the flush queue worker
+	// has stopped and no operations are in flight.
+	if lsm.memtable != nil {
+		lsm.memtable.Free()
+	}
 
 	// Stop WAL flusher (waits for pending flushes to complete)
 	if lsm.wal != nil {
